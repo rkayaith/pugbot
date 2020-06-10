@@ -1,13 +1,13 @@
-from discord import Message, Member, Status, utils, User, errors
-from discord.ext import commands
-from typing import FrozenSet, Optional, Union, List
-
-from dataclasses import dataclass, replace
 import asyncio
+from dataclasses import dataclass, replace
+import os
 import random
+from typing import FrozenSet, List, Optional, Union
 
+from discord import Member, Message, Status, User, errors, utils
+from discord.ext import commands
 
-MIN_PLAYERS = 1
+MIN_PLAYERS = int(os.environ.get('MIN_PLAYERS', default='8'))
 MAX_PLAYERS = 12
 HOST_EMOJI = '\N{Regional Indicator Symbol Letter H}'
 DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
@@ -15,6 +15,7 @@ DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
 
 pugs = {}   # per-channel pug states
 locks = {}  # per-channel lock for pug states
+
 
 async def update_state(msg):
     """ Update pug state using a new message. """
@@ -81,6 +82,7 @@ def setup(bot):
             # don't allow reacts to messages other than the main one
             await reaction.remove(user)
 
+
 @dataclass(frozen=True)
 class PugState:
     bot: commands.Bot
@@ -130,16 +132,16 @@ class IdleState(PugState):
         is_afk = lambda user: isinstance(user, Member) and user.status != Status.online
         afks = list(filter(is_afk, hosts | players))
         if afks:
-            next_state = await self.notify(self, f"Removing afk players: `{strjoin(afks)}`")
+            next_state = await PugState.notify(self, f"Removing afk players: `{strjoin(afks)}`")
             await asyncio.gather(*(react.remove(user) for user in afks for react in new_msg.reactions))
             return await next_state.next(await new_msg.channel.fetch_message(new_msg.id))
 
         # start pug
         await self.msg.delete()  # delete the current message
         host = random.choice(list(hosts))
-        players = random.sample(players, k=min(MAX_PLAYERS, len(players)))
-        team_size = len(players) // 2
-        red, blu = players[:team_size], players[team_size:] # FIXME: teams might not be the same size
+        team_size = min(MAX_PLAYERS, len(players)) // 2
+        players = random.sample(players, k=team_size * 2)
+        red, blu = players[:team_size], players[team_size:]
         return RunningState(self.bot, None, self.notice, host, red, blu)
 
 
@@ -186,6 +188,7 @@ class RunningState(PugState):
 
 def strjoin(it, sep=', '):
     return sep.join(map(str, it))
+
 
 async def bot_owner_reacted(bot, reaction):
     """ returns whether the bot owner has reacted with 'reaction' """
