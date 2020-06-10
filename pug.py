@@ -4,7 +4,7 @@ import os
 import random
 from typing import FrozenSet, List, Optional, Union
 
-from discord import Member, Message, Status, User, errors, utils
+from discord import Member, Message, Status, TextChannel, User, errors, utils
 from discord.ext import commands
 
 MIN_PLAYERS = int(os.environ.get('MIN_PLAYERS', default='8'))
@@ -38,19 +38,33 @@ async def update_state(msg):
 def setup(bot):
 
     @bot.command(aliases=['i'])
-    @commands.guild_only()
-    async def init(ctx):
+    async def init(ctx, channel: Optional[TextChannel], msg: Optional[Message]):
         """ Start the bot in a channel """
-        msg = await ctx.send("Loading...")
-        pugs[ctx.channel.id] = IdleState(bot, msg, None)
-        locks[ctx.channel.id] = asyncio.Lock()
+        if channel is None:
+            channel = msg.channel if msg is not None else ctx.channel
+        if msg is None:
+            msg = await channel.send("Loading...")
+
+        pugs[channel.id] = IdleState(bot, msg, None)
+        locks[channel.id] = asyncio.Lock()
         await asyncio.gather(*(msg.add_reaction(r) for r in IdleState.REACTS))
         await update_state(msg)
 
     @bot.command(aliases=['p'])
-    async def poke(ctx):
+    async def poke(ctx, channel: Optional[TextChannel]):
         """ Force the bot to update its state (in case it gets stuck) """
-        await update_state(await ctx.fetch_message(pugs[ctx.channel.id].msg.id))
+        if channel is None:
+            channel = ctx.channel
+        await update_state(await ctx.fetch_message(pugs[channel.id].msg.id))
+
+    @bot.command()
+    @commands.is_owner()
+    async def status(ctx):
+        """ Print out the bot's state in all channels. """
+        await ctx.send('**Status**\n' + (
+            '\n\n'.join(f"`channel: {chan_id} | msg: {state.msg.id}`\n{state}" for chan_id, state in pugs.items())
+            or 'Not active in any channels.'
+        ))
 
     @bot.command()
     @commands.is_owner()
@@ -59,11 +73,21 @@ def setup(bot):
         await ctx.channel.purge(check=lambda m: m.author == bot.user)
 
     @bot.listen()
+    async def on_raw_reaction_add(*args):
+        print("[event] on_raw_reaction_add")
+
+    @bot.listen()
+    async def on_raw_reaction_remove(*args):
+        print("[event] on_raw_reaction_remove")
+
+    @bot.listen()
     async def on_reaction_add(*args):
+        print("[event] on_reaction_add")
         await on_reaction(*args)
 
     @bot.listen()
     async def on_reaction_remove(*args):
+        print("[event] on_reaction_remove")
         await on_reaction(*args)
 
     async def on_reaction(reaction, user):
