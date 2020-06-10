@@ -82,7 +82,9 @@ def setup(bot):
     @bot.command()
     async def resume(ctx, msg: Message):
         """ Start the bot on an existing message. """
+        assert msg.channel.type == ChannelType.text
         await init(msg)
+        await ctx.send(f"Resumed in {msg.channel.mention} (<{msg.jump_url}>).")
 
     @bot.command(aliases=['p'])
     async def poke(ctx, channel: TextChannel = None):
@@ -105,7 +107,7 @@ def setup(bot):
     async def status(ctx):
         """ Print out the bot's state in all channels. """
         await ctx.send('**Status**\n' + (
-            '\n\n'.join(f"`channel: {chan_id} | msg: {state.msg.id}`\n{state}" for chan_id, state in pugs.items())
+            '\n\n'.join(f"`{chan_id}-{state.msg.id}` {state.msg.channel.mention}\n{state}" for chan_id, state in pugs.items())
             or 'Not active in any channels.'
         ))
 
@@ -115,6 +117,11 @@ def setup(bot):
         """ Clean up the bot's messages in a channel """
         if channel is None:
             channel = ctx.channel
+        if channel.type != ChannelType.text:
+            await ctx.send("This only works in text channels.")
+            return
+
+        assert channel.id not in pugs
         await channel.purge(check=lambda m: m.author == bot.user)
 
     @bot.listen()
