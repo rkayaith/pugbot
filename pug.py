@@ -2,11 +2,14 @@ import asyncio
 from dataclasses import dataclass, replace
 import os
 import random
+import sys
 from typing import FrozenSet, List, Optional, Union
+import traceback
 
 from discord import ChannelType, Member, Message, Status, TextChannel, User, errors, utils
 from discord.ext import commands
 
+MIN_HOSTS = 1
 MIN_PLAYERS = int(os.environ.get('MIN_PLAYERS', default='8'))
 MAX_PLAYERS = 12
 HOST_EMOJI = '\N{Regional Indicator Symbol Letter H}'
@@ -34,33 +37,68 @@ async def update_state(msg):
         print(next_state)
         pugs[msg.channel.id] = next_state
 
-
 def setup(bot):
-
-    @bot.command(aliases=['i'])
-    async def init(ctx, channel: Optional[TextChannel], msg: Optional[Message]):
-        """ Start the bot in a channel """
-        if channel is None:
-            channel = msg.channel if msg is not None else ctx.channel
-
-        if channel.type != ChannelType.text:
-            await ctx.send("I can't start a PUG in that type of channel.")
-            return
-
-        if msg is None:
-            msg = await channel.send("Loading...")
-
-        pugs[channel.id] = IdleState(bot, msg, None)
-        locks[channel.id] = asyncio.Lock()
+    async def init(msg):
+        assert msg.channel.id not in pugs
+        pugs[msg.channel.id] = IdleState(bot, msg, None)
+        locks[msg.channel.id] = asyncio.Lock()
         await asyncio.gather(*(msg.add_reaction(r) for r in IdleState.REACTS))
         await update_state(msg)
 
+    @bot.command(aliases=['s'])
+    async def start(ctx, channel: TextChannel = None):
+        """ Start the bot in a channel """
+        if channel is None:
+            channel = ctx.channel
+
+        if channel.type != ChannelType.text:
+            await ctx.send("PUGs can only run in text channels.")
+            return
+
+        if channel.id in pugs:
+            await ctx.send(f"I'm already running in {channel.mention}.")
+            return
+
+        await init(await channel.send("Loading..."))
+
+        if channel != ctx.channel:
+            await ctx.send(f"Started in {channel.mention}.")
+
+    @bot.command()
+    async def stop(ctx, channel: TextChannel = None):
+        if channel is None:
+            channel = ctx.channel
+        channel_name = getattr(channel, 'mention', f"'{channel}'")
+
+        if channel.id not in pugs:
+            await ctx.send(f"I'm not running in {channel_name}.")
+            return
+
+        async with locks[channel.id]:
+            del pugs[channel.id]
+            del locks[channel.id]
+        await ctx.send(f"Stopped in {channel_name}.")
+
+    @bot.command()
+    async def resume(ctx, msg: Message):
+        """ Start the bot on an existing message. """
+        await init(msg)
+
     @bot.command(aliases=['p'])
-    async def poke(ctx, channel: Optional[TextChannel]):
+    async def poke(ctx, channel: TextChannel = None):
         """ Force the bot to update its state (in case it gets stuck) """
         if channel is None:
             channel = ctx.channel
-        await update_state(await ctx.fetch_message(pugs[channel.id].msg.id))
+        channel_name = getattr(channel, 'mention', f"'{channel}'")
+
+        if channel.id not in pugs:
+            await ctx.send(f"Nothing to poke in {channel_name}.")
+            return
+
+        await update_state(await channel.fetch_message(pugs[channel.id].msg.id))
+        if channel != ctx.channel:
+            await ctx.send(f"Poked {channel_name}.")
+
 
     @bot.command()
     @commands.is_owner()
@@ -73,47 +111,50 @@ def setup(bot):
 
     @bot.command()
     @commands.is_owner()
-    async def clean(ctx):
+    async def clean(ctx, channel: TextChannel = None):
         """ Clean up the bot's messages in a channel """
-        await ctx.channel.purge(check=lambda m: m.author == bot.user)
+        if channel is None:
+            channel = ctx.channel
+        await channel.purge(check=lambda m: m.author == bot.user)
 
     @bot.listen()
-    async def on_raw_reaction_add(*args):
-        print("[event] on_raw_reaction_add")
+    async def on_command_error(ctx, error):
+        if isinstance(error, commands.CommandInvokeError):
+            print(f"Exception occured in '{ctx.command}'", file=sys.stderr)
+            traceback.print_exception(None, error.original, error.original.__traceback__, file=sys.stderr)
+            await ctx.send(f'Something went wrong ({type(error.original).__name__}).')
+            return
 
-    @bot.listen()
-    async def on_raw_reaction_remove(*args):
-        print("[event] on_raw_reaction_remove")
+        await ctx.send(error)
 
-    @bot.listen()
-    async def on_reaction_add(*args):
-        print("[event] on_reaction_add")
-        await on_reaction(*args)
-
-    @bot.listen()
-    async def on_reaction_remove(*args):
-        print("[event] on_reaction_remove")
-        await on_reaction(*args)
-
-    async def on_reaction(reaction, user):
+    @bot.listen('on_raw_reaction_add')
+    @bot.listen('on_raw_reaction_remove')
+    async def on_raw_reaction(event):
         # ignore the bot's reactions
-        if user == bot.user:
+        if event.user_id == bot.user.id:
             return
 
-        # ignore reactions that aren't to the bot
-        if reaction.message.author != bot.user:
+        # ignore reactions to channels we aren't watching
+        if event.channel_id not in pugs:
             return
 
-        if pugs[reaction.message.channel.id].msg.id == reaction.message.id:
-            # update the pug state
-            await update_state(reaction.message)
-        else:
-            # don't allow reacts to messages other than the main one
-            await reaction.remove(user)
+        # ignore reactions to messages we aren't watching
+        if event.message_id != pugs[event.channel_id].msg.id:
+            return
+
+        # fetch the full message and update state
+        # NOTE: if we used the 'reaction_add' and 'reaction_remove' events we
+        #       wouldn't have to fetch the message, but those events only fire
+        #       for messages in the bot's message cache.
+        channel = bot.get_channel(event.channel_id)
+        msg = await channel.fetch_message(event.message_id)
+        await update_state(msg)
 
 
 @dataclass(frozen=True)
 class PugState:
+    REACTS = []
+
     bot: commands.Bot
     msg: Optional[Message]
     notice: Optional[Message]
@@ -154,7 +195,7 @@ class IdleState(PugState):
         players = frozenset([u for r in player_reacts async for u in r.users()]) - { self.bot.user }
 
         # if we're still waiting for people, stay in the idle state
-        if len(hosts) < 1 or len(players) < MIN_PLAYERS:
+        if len(hosts) < MIN_HOSTS or len(players) < MIN_PLAYERS:
             return replace(self, msg=new_msg, hosts=hosts, players=players)
 
         # if there's idle players, remove them and try again
