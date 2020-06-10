@@ -4,7 +4,7 @@ import os
 import random
 from typing import FrozenSet, List, Optional, Union
 
-from discord import Member, Message, Status, TextChannel, User, errors, utils
+from discord import ChannelType, Member, Message, Status, TextChannel, User, errors, utils
 from discord.ext import commands
 
 MIN_PLAYERS = int(os.environ.get('MIN_PLAYERS', default='8'))
@@ -42,6 +42,11 @@ def setup(bot):
         """ Start the bot in a channel """
         if channel is None:
             channel = msg.channel if msg is not None else ctx.channel
+
+        if channel.type != ChannelType.text:
+            await ctx.send("I can't start a PUG in that type of channel.")
+            return
+
         if msg is None:
             msg = await channel.send("Loading...")
 
