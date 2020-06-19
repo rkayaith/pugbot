@@ -18,3 +18,4 @@ async def reload(ctx):
 
 bot.load_extension(EXT_PATH)
 bot.run(BOT_TOKEN)
+print(f"done with {bot.user}")

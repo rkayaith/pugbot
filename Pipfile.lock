@@ -1,11 +1,11 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "d69716357f8f48d541c15b59fcab4e3f3e6767e6d9cb50518d251c9c1f27b157"
+            "sha256": "61106b24b4142a6130b661a3118e1218db5b3f1ece6825ef55a49eb686112beb"
         },
         "pipfile-spec": 6,
         "requires": {
-            "python_version": "3.7"
+            "python_version": "3.8"
         },
         "sources": [
             {
@@ -60,6 +60,14 @@
             ],
             "index": "pypi",
             "version": "==1.3.3"
+        },
+        "emoji-country-flag": {
+            "hashes": [
+                "sha256:67c0cb6a3765fb53f31b34160d6b1c8a5f44b297bc278d1835c6f2e5b0a9a592",
+                "sha256:ae7edb38077b0840210fa9e37673f481f2b9c032446e13ad6dab2b1108cd7ad6"
+            ],
+            "index": "pypi",
+            "version": "==1.2.1"
         },
         "idna": {
             "hashes": [

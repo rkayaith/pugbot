@@ -7,6 +7,7 @@ verify_ssl = true
 
 [packages]
 discord-py = "*"
+emoji-country-flag = "*"
 
 [requires]
-python_version = "3.7"
+python_version = "3.8"
