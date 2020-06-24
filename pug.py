@@ -247,11 +247,14 @@ class IdleState(PugState):
         players  = frozenset(u for r, u in reactions if r.emoji != HOST_EMOJI)
 
         # if we're still waiting for people, stay in the idle state
-        end_early = (SKIP_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
-        keep_waiting = (PAUSE_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
-        if keep_waiting or (not end_early and (len(hosts) < MIN_HOSTS or len(captains) < MIN_CAPTS or len(players) < MIN_PLAYERS)):
+        still_waiting = (len(hosts) < MIN_HOSTS or len(captains) < MIN_CAPTS or len(players) < MIN_PLAYERS)
+        end_early     = (SKIP_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
+        keep_waiting  = (PAUSE_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
+        print(f"still_waiting={still_waiting}, end_early={end_early}, keep_waiting={keep_waiting}")
+        if keep_waiting or (still_waiting and not end_early):
             return replace(self, msg=new_msg, hosts=hosts, captains=captains, players=players)
 
+        """
         # if anyone is idle, remove them and try again
         afks = [(r, user) for r, user in reactions
                 if not isinstance(user, Member) or user.status != Status.online]
@@ -259,6 +262,7 @@ class IdleState(PugState):
             next_state = await PugState.notify(self, f"Removing afk players: `{strjoin({ u for _, u in afks })}`")
             await asyncio.gather(*(reaction.remove(user) for reaction, user in afks))
             return await next_state.next(await new_msg.channel.fetch_message(new_msg.id))
+        """
 
         # start pug
         # captains = captains | { self.bot.user }; hosts = hosts | { self.bot.user }  # TODO: remove this hack
@@ -332,7 +336,6 @@ class PickState(PugState):
                    players=players - { red_capt, blu_capt },
                    teams=((red_capt,), (blu_capt,)),
                    pick_idx=0)
-
 
     def __str__(self):
         is_picked = [any(p in t for t in self.teams) for p in self.players]
