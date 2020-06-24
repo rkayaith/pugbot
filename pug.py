@@ -7,7 +7,7 @@ import sys
 from typing import ClassVar, FrozenSet, List, Optional, Tuple, Union
 import traceback
 
-from discord import ChannelType, Member, Message, Reaction, Status, TextChannel, User, errors, utils
+from discord import ChannelType, Member, Message, Object, Reaction, Status, TextChannel, User, errors, utils
 from discord.ext import commands
 from flag import flag
 
@@ -167,6 +167,12 @@ def setup(bot):
         await channel.purge(check=lambda m: m.author == bot.user)
 
     @bot.listen()
+    async def on_ready():
+        # make sure the bot's owner_id value is set by making a call to is_owner()
+        await bot.is_owner(Object(None))
+        print(f"Bot owner is {bot.get_user(bot.owner_id)}")
+
+    @bot.listen()
     async def on_command_error(ctx, error):
         if isinstance(error, commands.CommandInvokeError):
             print(f"Exception occured in '{ctx.command}'", file=sys.stderr)
@@ -217,9 +223,9 @@ class PugState:
 class IdleState(PugState):
     reacts: ClassVar[List[str]] = [HOST_EMOJI, CAPT_EMOJI]
 
-    hosts: FrozenSet[Union[User, Member]] = frozenset()
-    captains: FrozenSet[Union[User, Member]] = frozenset()
-    players: FrozenSet[Union[User, Member]] = frozenset()
+    hosts: FrozenSet[Member] = frozenset()
+    captains: FrozenSet[Member] = frozenset()
+    players: FrozenSet[Member] = frozenset()
 
     def __str__(self):
         return (
@@ -228,9 +234,9 @@ class IdleState(PugState):
             f"React with {CAPT_EMOJI} to captain.\n"
             f"React with anything else to play.\n"
             f"```\n"
-            f"{len(self.hosts)} host(s):     {', '.join(u.name for u in self.hosts)}\n"
-            f"{len(self.captains)} captains(s): {', '.join(u.name for u in self.captains)}\n"
-            f"{len(self.players)} player(s):   {', '.join(u.name for u in self.players)}\n"
+            f"{len(self.hosts)} host(s):     {', '.join(u.display_name for u in self.hosts)}\n"
+            f"{len(self.captains)} captains(s): {', '.join(u.display_name for u in self.captains)}\n"
+            f"{len(self.players)} player(s):   {', '.join(u.display_name for u in self.players)}\n"
             f"```"
         )
 
@@ -294,9 +300,9 @@ class VoteState(PugState):
         return (
             f"**PUG voting**\n"
             f"{HOST_EMOJI} - **Vote for a host:**\n"
-            + '\n'.join(f'> {e} - {m.name}' for m, e in zip(self.hosts, self.host_emojis)) +" \n"
+            + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.hosts, self.host_emojis)) +" \n"
             f"{CAPT_EMOJI} - **Vote for captains:**\n"
-            + '\n'.join(f'> {e} - {m.name}' for m, e in zip(self.captains, self.capt_emojis)) + "\n"
+            + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.captains, self.capt_emojis)) + "\n"
         )
 
     async def next(self, msg: Message):
@@ -340,14 +346,14 @@ class PickState(PugState):
     def __str__(self):
         is_picked = [any(p in t for t in self.teams) for p in self.players]
         emojis    = [PICKED_EMOJI if picked else r for picked, r in zip(is_picked, self.reacts)]
-        names     = [f'~~{p.name}~~' if picked else p.name for picked, p in zip(is_picked, self.players)]
+        names     = [f'~~{p.display_name}~~' if picked else p.display_name for picked, p in zip(is_picked, self.players)]
         captain   = self.teams[PICK_ORDER[self.pick_idx]][0]
         return (
             f"**PUG team picking: {CAPT_EMOJI} {captain.mention} - Pick a player**\n"
-            f"**Host:** {self.host.name}\n"
+            f"**Host:** {self.host.display_name}\n"
             f"**Teams:**\n"
-            f"> **RED**: {strjoin(m.name for m in self.teams[0])}\n"
-            f"> **BLU**: {strjoin(m.name for m in self.teams[1])}\n"
+            f"> **RED**: {strjoin(m.display_name for m in self.teams[0])}\n"
+            f"> **BLU**: {strjoin(m.display_name for m in self.teams[1])}\n"
             f"**Players:**\n" + '\n'.join(f'> {e} - {n}' for e, n in zip(emojis, names)) + "\n"
         )
 
