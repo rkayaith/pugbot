@@ -271,8 +271,8 @@ class IdleState(PugState):
         """
 
         # start pug
-        # captains = captains | { self.bot.user }; hosts = hosts | { self.bot.user }  # TODO: remove this hack
-        return VoteState(self.bot, None, self.notice, hosts, captains, players)
+        # captains = captains | { self.bot.user }; hosts = hosts | { self.bot.user }; players = players | set(map(self.msg.channel.guild.get_member, [723040252683616277, 723041156208001057, 723314051811115119, 723314517806678097, 723333772099190794, 723342828243255310, 723343877817499689])) # TODO: remove this hack
+        return VoteState.make(self.bot, None, self.notice, hosts, captains, players)
 
 
 @dataclass(frozen=True)
@@ -281,9 +281,27 @@ class VoteState(PugState):
     captains: FrozenSet[Member]
     players: FrozenSet[Member]
 
+    @classmethod
+    def make(cls, bot, msg, notice, hosts, captains, players):
+        state = cls(bot, msg, notice, hosts, captains, players)
+        # skip voting if there's nothing to vote on
+        if not state.host_voting and not state.capt_voting:
+            [host] = hosts
+            red_capt, blu_capt = captains
+            return PickState.make(bot, msg, notice, host, red_capt, blu_capt, players)
+        return state
+
     @property
     def reacts(self):
-        return self.host_emojis + self.capt_emojis
+        return (self.host_emojis if self.host_voting else [])  + (self.capt_emojis if self.capt_voting else [])
+
+    @property
+    def host_voting(self):
+        return len(self.hosts) != 1
+
+    @property
+    def capt_voting(self):
+        return len(self.captains) != 2
 
     @property
     def host_emojis(self):
@@ -296,20 +314,24 @@ class VoteState(PugState):
         return OPTION_EMOJIS[:len(self.captains)]
 
     def __str__(self):
-        # TODO: skip/hide voting when it's not needed
-        return (
-            f"**PUG voting**\n"
-            f"{HOST_EMOJI} - **Vote for a host:**\n"
-            + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.hosts, self.host_emojis)) +" \n"
-            f"{CAPT_EMOJI} - **Vote for captains:**\n"
-            + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.captains, self.capt_emojis)) + "\n"
-        )
+        s = f"**PUG voting**\n"
+        if self.host_voting:
+            s += (
+                f"{HOST_EMOJI} - **Vote for a host:**\n"
+                + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.hosts, self.host_emojis)) +" \n"
+            )
+        if self.capt_voting:
+            s += (
+                f"{CAPT_EMOJI} - **Vote for captains:**\n"
+                + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.captains, self.capt_emojis)) + "\n"
+            )
+        return s
 
     async def next(self, msg: Message):
         assert msg.id == self.msg.id
 
-        host_votes = [utils.get(msg.reactions, emoji=e).count - 1 for e in self.host_emojis]
-        capt_votes = [utils.get(msg.reactions, emoji=e).count - 1 for e in self.capt_emojis]
+        host_votes = [getattr(utils.get(msg.reactions, emoji=e), 'count', 1) - 1 for e in self.host_emojis]
+        capt_votes = [getattr(utils.get(msg.reactions, emoji=e), 'count', 1) - 1 for e in self.capt_emojis]
 
         # wait until we have enough votes
         end_early = (utils.get(msg.reactions, emoji=SKIP_EMOJI) is not None)  # allow owner to end voting early. TODO: check if reacting user is the bot owner
@@ -321,7 +343,6 @@ class VoteState(PugState):
         (_, red_capt), (_, blu_capt) = sorted(zip(capt_votes, self.captains), key=get(0))[-2:]
 
         # start team-picking
-        # testusers = set(map(msg.channel.guild.get_member, [723040252683616277, 723041156208001057, 723314051811115119, 723314517806678097, 723333772099190794, 723342828243255310, 723343877817499689])); self = replace(self, players=self.players | testusers)  # TODO: remove this hack
         return PickState.make(self.bot, None, self.notify, host, red_capt, blu_capt, self.players)
 
 
