@@ -118,6 +118,12 @@ def setup(bot):
         await ctx.send(f"Stopped in {channel_name}.")
 
     @bot.command(hidden=True)
+    async def say_thanks(ctx, channel: TextChannel = None):
+        if channel is None:
+            channel = ctx.channel
+        await channel.send('Thanks.')
+
+    @bot.command(hidden=True)
     async def resume(ctx, msg: Message):
         """ Start the bot on an existing message. """
         assert msg.channel.type == ChannelType.text
