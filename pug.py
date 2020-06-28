@@ -15,7 +15,7 @@ from mem import pugs, locks
 
 MIN_HOSTS = 1
 MIN_CAPTS = 2
-MIN_VOTES = 5
+MIN_VOTES = 12
 MIN_PLAYERS = int(os.environ.get('MIN_PLAYERS', default='8'))
 MAX_PLAYERS = 12
 
