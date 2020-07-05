@@ -73,9 +73,9 @@ async def update_state(msg):
 
 
 def setup(bot):
-    async def init(msg):
+    async def init(msg, owner):
         assert msg.channel.id not in pugs
-        pugs[msg.channel.id] = IdleState(bot, msg, None)
+        pugs[msg.channel.id] = IdleState(bot, owner, msg, None)
         locks[msg.channel.id] = asyncio.Lock()
         await asyncio.gather(*(msg.add_reaction(r) for r in IdleState.reacts))
         await update_state(msg)
@@ -94,7 +94,7 @@ def setup(bot):
             await ctx.send(f"I'm already running in {channel.mention}.")
             return
 
-        await init(await channel.send("Loading..."))
+        await init(await channel.send("Loading..."), ctx.author)
 
         if channel != ctx.channel:
             await ctx.send(f"Started in {channel.mention}.")
@@ -127,7 +127,7 @@ def setup(bot):
     async def resume(ctx, msg: Message):
         """ Start the bot on an existing message. """
         assert msg.channel.type == ChannelType.text
-        await init(msg)
+        await init(msg, owner=ctx.author)  # NOTE: we don't know who started the original PUG, so we change the owner to whoever's resuming it
         await ctx.send(f"Resumed in {msg.channel.mention} (<{msg.jump_url}>).")
 
     @bot.command(aliases=['p'], hidden=True)
@@ -214,6 +214,7 @@ def setup(bot):
 @dataclass(frozen=True)
 class PugState:
     bot: commands.Bot
+    owner: Member
     msg: Optional[Message]
     notice: Optional[Message]
 
@@ -244,6 +245,7 @@ class IdleState(PugState):
             f"{len(self.captains)} captains(s): {', '.join(u.display_name for u in self.captains)}\n"
             f"{len(self.players)} player(s):   {', '.join(u.display_name for u in self.players)}\n"
             f"```"
+            f"*The PUG will start when there's {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players. {self.owner.mention} can react with  {PAUSE_EMOJI} to stop the PUG from automatically starting.*\n"
         )
 
     async def next(self, new_msg: Message):
@@ -261,7 +263,7 @@ class IdleState(PugState):
         # if we're still waiting for people, stay in the idle state
         still_waiting = (len(hosts) < MIN_HOSTS or len(captains) < MIN_CAPTS or len(players) < MIN_PLAYERS)
         end_early     = (SKIP_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
-        keep_waiting  = (PAUSE_EMOJI, self.bot.owner_id) in ((r.emoji, u.id) for r, u in reactions)
+        keep_waiting  = bool({ self.bot.owner_id, self.owner } & { u.id for r, u in reactions if r.emoji == PAUSE_EMOJI })
         print(f"still_waiting={still_waiting}, end_early={end_early}, keep_waiting={keep_waiting}")
         if keep_waiting or (still_waiting and not end_early):
             return replace(self, msg=new_msg, hosts=hosts, captains=captains, players=players)
@@ -278,7 +280,7 @@ class IdleState(PugState):
 
         # start pug
         # captains = captains | { self.bot.user }; hosts = hosts | { self.bot.user }; players = players | set(map(self.msg.channel.guild.get_member, [723040252683616277, 723041156208001057, 723314051811115119, 723314517806678097, 723333772099190794, 723342828243255310, 723343877817499689])) # TODO: remove this hack
-        return VoteState.make(self.bot, None, self.notice, hosts, captains, players)
+        return VoteState.make(self.bot, self.owner, None, self.notice, hosts, captains, players)
 
 
 @dataclass(frozen=True)
@@ -288,13 +290,13 @@ class VoteState(PugState):
     players: FrozenSet[Member]
 
     @classmethod
-    def make(cls, bot, msg, notice, hosts, captains, players):
-        state = cls(bot, msg, notice, hosts, captains, players)
+    def make(cls, bot, owner, msg, notice, hosts, captains, players):
+        state = cls(bot, owner, msg, notice, hosts, captains, players)
         # skip voting if there's nothing to vote on
         if not state.host_voting and not state.capt_voting:
             [host] = hosts
             red_capt, blu_capt = captains
-            return PickState.make(bot, msg, notice, host, red_capt, blu_capt, players)
+            return PickState.make(bot, owner, msg, notice, host, red_capt, blu_capt, players)
         return state
 
     @property
@@ -331,6 +333,7 @@ class VoteState(PugState):
                 f"{CAPT_EMOJI} - **Vote for captains:**\n"
                 + '\n'.join(f'> {e} - {m.display_name}' for m, e in zip(self.captains, self.capt_emojis)) + "\n"
             )
+        s += f"*Waiting for more votes. {self.owner.mention} can end this early by reacting with {SKIP_EMOJI}*\n"
         return s
 
     async def next(self, msg: Message):
@@ -339,8 +342,12 @@ class VoteState(PugState):
         host_votes = [getattr(utils.get(msg.reactions, emoji=e), 'count', 1) - 1 for e in self.host_emojis]
         capt_votes = [getattr(utils.get(msg.reactions, emoji=e), 'count', 1) - 1 for e in self.capt_emojis]
 
+        # allow owner to end voting early.
+        skip_react = utils.get(msg.reactions, emoji=SKIP_EMOJI)
+        skip_react_user_ids = [u.id async for u in skip_react.users()] if skip_react else []
+        end_early = self.bot.owner_id in skip_react_user_ids or self.owner.id in skip_react_user_ids
+
         # wait until we have enough votes
-        end_early = (utils.get(msg.reactions, emoji=SKIP_EMOJI) is not None)  # allow owner to end voting early. TODO: check if reacting user is the bot owner
         if not end_early and (sum(host_votes) < MIN_VOTES or sum(capt_votes) < MIN_VOTES):
             return replace(self, msg=msg)
 
@@ -349,7 +356,7 @@ class VoteState(PugState):
         (_, red_capt), (_, blu_capt) = sorted(zip(capt_votes, self.captains), key=get(0))[-2:]
 
         # start team-picking
-        return PickState.make(self.bot, None, self.notify, host, red_capt, blu_capt, self.players)
+        return PickState.make(self.bot, self.owner, None, self.notify, host, red_capt, blu_capt, self.players)
 
 
 PICKED_EMOJI = '\N{NO ENTRY SIGN}'
@@ -363,8 +370,8 @@ class PickState(PugState):
     pick_idx: int
 
     @classmethod
-    def make(cls, bot, msg, notify, host, red_capt, blu_capt, players):
-        return cls(bot, msg, notify,
+    def make(cls, bot, owner, msg, notify, host, red_capt, blu_capt, players):
+        return cls(bot, owner, msg, notify,
                    host=host,
                    players=players - { red_capt, blu_capt },
                    teams=((red_capt,), (blu_capt,)),
@@ -413,7 +420,7 @@ class PickState(PugState):
                     return replace(self, msg=msg, pick_idx=pick_idx, teams=teams)
 
                 # all teams are full, start the pug
-                return RunningState(self.bot, None, self.notify, self.host, teams[0], teams[1])
+                return RunningState(self.bot, self.owner, None, self.notify, self.host, teams[0], teams[1])
 
         return replace(self, msg=msg)
 
@@ -452,13 +459,13 @@ class RunningState(PugState):
             await msg.channel.send(content=(
                 f"**PUG finished**\n"
                 f"**PUG info:**\n"
-                f"> **Host**: {self.host.name}\n"
-                f"> **RED**: {strjoin(u.name for u in self.red)}\n"
-                f"> **BLU**: {strjoin(u.name for u in self.blu)}\n"
+                f"> **Host**: {self.host.display_name}\n"
+                f"> **RED**: {strjoin(u.display_name for u in self.red)}\n"
+                f"> **BLU**: {strjoin(u.display_name for u in self.blu)}\n"
             ))
 
             # start the next pug
-            return IdleState(self.bot, msg=None, notice=self.notice)
+            return IdleState(self.bot, self.owner, msg=None, notice=self.notice)
         return replace(self, msg=msg)
 
 
