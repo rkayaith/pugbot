@@ -124,6 +124,11 @@ def setup(bot):
         await channel.send('Thanks.')
 
     @bot.command(hidden=True)
+    async def ping(ctx, channel: TextChannel, user: User):
+        print(f"ping {user}")
+        await channel.send(user.mention)
+
+    @bot.command(hidden=True)
     async def resume(ctx, msg: Message):
         """ Start the bot on an existing message. """
         assert msg.channel.type == ChannelType.text
