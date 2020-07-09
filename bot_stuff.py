@@ -43,6 +43,8 @@ class Bot(commands.Bot):
 
 import asyncio
 from dataclasses import dataclass
+from collections import defaultdict
+
 @dataclass
 class ChanCtx:
     lock: asyncio.Lock
@@ -64,115 +66,61 @@ def as_fut(obj):
     fut.set_result(obj)
     return fut
 
-async def update_discord(bot, chan_id, prev_msg_ids, prev_msgs, next_msgs):
-    assert prev_msg_ids.keys() == prev_msgs.keys()
+async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_next_msg):
+    assert msg_ids.keys() == key_to_msg.keys()
+    msg_to_keys = defaultdict(set, invert_dict(key_to_msg))
 
-    msg_to_prev_keys = invert_dict(prev_msgs)
+    def try_map(map_func, unmapped, free_keys, next_msg_ids):
+        # copy inputs so we can modify them
+        free_keys, next_msg_ids = set(free_keys), dict(next_msg_ids)
 
-    def no_change(key, msg):
-        if msg == prev_msgs.get(key):
-            print(f"{key} -> {key} (no_change)")
-            return (key, msg), as_fut(prev_msg_ids[key])
-
-    def remap_id(key, msg):
-        # if there's already a message with the same content but a different key,
-        # remap that message id to this key
-        if (existing_keys := msg_to_prev_keys.get(msg)):
-            prev_key = next(iter(existing_keys))  # just pick one randomly TODO: prioritize keys that can't be used by edit_msg()
-            print(f"{prev_key} -> {key} (remap_id)")
-            return (prev_key, msg), as_fut(prev_msg_ids[prev_key])
-
-    def edit_msg(key, msg):
-        if (prev_msg := prev_msgs.get(key)) is not None:
-            # a message with this key exists
-            if key in msg_to_prev_keys[prev_msg]:
-                # that message hasn't been mapped yet
-                # reuse the message and edit it's content
-                print(f"{key} -> {key} (edit)")
-                async def edit():
-                    # TODO: not the best way to do this...
-                    bot.edit_message(chan_id, prev_msg_ids[key], content=msg)
-                    return prev_msg_ids[key]
-                return (key, prev_msg), edit()
-
-    def send_msg(key, msg):
-        print(f"None -> {key} (send)")
-        return None, bot.send_message(chan_id, content=msg)
-
-
-    next_msg_ids = {}
-    def try_map(map_func):
-        def filter_fn(item):
-            key, msg = item
-            if (ret := map_func(key, msg)) is None:
-                # mapping failed, keep 'item'
+        def attempt_map(key):
+            if (key_to_use := map_func(key, key_to_next_msg[key], free_keys)) is None:
                 return True
-
-            prev_value, msg_id = ret
-            next_msg_ids[key] = msg_id
-            if prev_value is not None:
-                # remove 'prev_key' from the set of available keys left to be mapped
-                prev_key, prev_msg = prev_value
-                msg_to_prev_keys[prev_msg].remove(prev_key)
-
-            # mapping succeeded, filter out 'item'
+            free_keys.remove(key_to_use)
+            next_msg_ids[key] = msg_ids[key_to_use]
             return False
-        return filter_fn
+
+        return list(filter(attempt_map, unmapped)), free_keys, next_msg_ids
+
+    def no_change(key, msg, free_keys):
+        # key, msg -> key, msg
+        if key in free_keys and msg == key_to_msg[key]:
+            print(f"{key} -> {key} (no_change)")
+            return key
+
+    def change_key(key, msg, free_keys):
+        # different_key, msg -> key, msg
+        if (cand_keys := msg_to_keys[msg] & free_keys):
+            # TODO: prioritize keys that can't be used by change_msg()
+            key_to_use = next(iter(cand_keys))  # pick one randomly
+            print(f"{key_to_use} -> {key} (change_key)")
+            return key_to_use
+
+    def change_msg(key, msg, free_keys):
+        # key, different_msg -> key, msg
+        if key in free_keys:
+            assert msg != key_to_msg[key]
+            bot.edit_message(chan_id, msg_ids[key], content=msg)  # TODO: await this
+            return key
 
 
-    msgs_to_map = next_msgs.items()
-    msgs_to_map = list(filter(try_map(no_change), msgs_to_map))
-    msgs_to_map = list(filter(try_map(remap_id), msgs_to_map))
-    msgs_to_map = list(filter(try_map(edit_msg), msgs_to_map))
-    msgs_to_map = list(filter(try_map(send_msg), msgs_to_map))
-    assert len(msgs_to_map) == 0
+    unmapped     = key_to_next_msg.keys()
+    free_keys    = key_to_msg.keys()
+    next_msg_ids = {}
 
-    # TODO: bleh. find another way
-    next_msg_ids = { key: await msg_id for key, msg_id in next_msg_ids.items() }
+    unmapped, free_keys, next_msg_ids = try_map(no_change,  unmapped, free_keys, next_msg_ids)
+    unmapped, free_keys, next_msg_ids = try_map(change_key, unmapped, free_keys, next_msg_ids)
+    unmapped, free_keys, next_msg_ids = try_map(change_msg, unmapped, free_keys, next_msg_ids)
+
+    # create new messages for any remaining keys that weren't assigned to
+    for key in unmapped:
+        print(f"None -> {key} (send_msg)")
+        next_msg_ids[key] = await bot.send_message(chan_id, content=key_to_next_msg[key])
 
     # delete unused messages
-    for keys in msg_to_prev_keys.values():
-        for key in keys:
-            await bot.delete_message(chan_id, prev_msg_ids[key])
+    for key in free_keys:
+        print(f"{key} -> {None} (del_msg)")
+        await bot.delete_message(chan_id, msg_ids[key])
 
     return next_msg_ids
-
-    """
-    # update message content
-    for key, msg in next_msgs.items():
-
-        if msg in msg_to_prev_key:
-            # message 
-            next_msg_ids[key] = prev_msg_ids[msg_to_prev_key[msg]]
-            continue
-
-        assert False, "TODO"
-
-        msg_type = { 'embed': msg } if isinstance(msg, Embed) else { 'content', msg }
-        if key in ctx.msg_id_map:
-            # edit the existing message
-            msg_id = ctx.msg_id_map[key]
-            tasks.append(bot.edit_message(chan_id, **msg_type))
-        else:
-            # create a new message
-            # TODO: can we await the task later?
-            ctx.msg_id_map[key] = await bot.send_message(chan_id, **msg_type)
-            # ctx only tracks reacts to the 'main' message, so we clear it
-            if key == 'main':
-                ctx.reacts = fset()
-
-        # TODO: if the main message changed we should set ctx.reacts = fset()
-
-    return msg_id_map
-
-    # add new reacts
-    additions = next_state.reacts - ctx.reacts
-    removals  = ctx.reacts - next_state.reacts
-    for user_id, emoji in additions:
-        assert user_id == bot.user.id  # we can't add reactions from other people
-        tasks,append(bot.add_reaction(chan_id, msg_id, emoji))
-
-    # TODO: if removals == ctx.reacts we can use clear_reactions(). might want to do it only if len(removals) > 1 though
-    for user_id, emoji in removals:
-        tasks,append(bot.remove_reaction(chan_id, msg_id, user_id, emoji))
-    """
