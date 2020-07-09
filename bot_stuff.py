@@ -67,62 +67,78 @@ def as_fut(obj):
     fut.set_result(obj)
     return fut
 
-async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_next_msg):
+async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg):
     assert msg_ids.keys() == key_to_msg.keys()
+
+    # create a mapping from message content to# keys of messages with the that content
     msg_to_keys = defaultdict(set, invert_dict(key_to_msg))
 
-    def try_map(map_func, unmapped, free_keys, next_msg_ids):
-        # copy inputs so we can modify them
-        free_keys, next_msg_ids = set(free_keys), dict(next_msg_ids)
-
-        def attempt_map(key):
-            if (key_to_use := map_func(key, key_to_next_msg[key], free_keys)) is None:
-                return True
-            free_keys.remove(key_to_use)
-            next_msg_ids[key] = msg_ids[key_to_use]
-            return False
-
-        return list(filter(attempt_map, unmapped)), free_keys, next_msg_ids
-
+    """
+    Each of these functions takes the key and content of a message that will be
+    sent, and tries to find the key of an existing message for it to use.
+    """
+    # key, msg -> key, msg
     def no_change(key, msg, free_keys):
-        # key, msg -> key, msg
         if key in free_keys and msg == key_to_msg[key]:
             print(f"{key} -> {key} (no_change)")
             return key
 
+    # different_key, msg -> key, msg
     def change_key(key, msg, free_keys):
-        # different_key, msg -> key, msg
         if (cand_keys := msg_to_keys[msg] & free_keys):
-            # prioritize keys that can't be used by change_msg(). there might
-            # still be broken edge cases here, not sure...
-            key_to_use = next(chain(cand_keys - key_to_next_msg.keys(), cand_keys))
+            # prioritize keys that can't be used by change_msg(). there
+            # might still be broken edge cases here, not sure...
+            key_to_use = next(chain(cand_keys - key_to_new_msg.keys(), cand_keys))
             print(f"{key_to_use} -> {key} (change_key)")
             return key_to_use
 
+    # key, different_msg -> key, msg
     def change_msg(key, msg, free_keys):
-        # key, different_msg -> key, msg
         if key in free_keys:
             assert msg != key_to_msg[key]
             bot.edit_message(chan_id, msg_ids[key], content=msg)  # TODO: await this
+            print(f"{key} -> {key} (change_msg)")
             return key
 
 
-    unmapped     = key_to_next_msg.keys()
-    free_keys    = key_to_msg.keys()
-    next_msg_ids = {}
+    def try_map(map_func, unmapped, free_keys, new_msg_ids):
+        """
+        Take a mapping function and try and apply it to a set of unmapped messages.
+        Returns the keys of messages it wasn't able to map.
+        """
+        # copy inputs so we can modify them
+        free_keys, new_msg_ids = set(free_keys), dict(new_msg_ids)
 
-    unmapped, free_keys, next_msg_ids = try_map(no_change,  unmapped, free_keys, next_msg_ids)
-    unmapped, free_keys, next_msg_ids = try_map(change_key, unmapped, free_keys, next_msg_ids)
-    unmapped, free_keys, next_msg_ids = try_map(change_msg, unmapped, free_keys, next_msg_ids)
+        def attempt_map(key):
+            if (key_to_use := map_func(key, key_to_new_msg[key], free_keys)) is None:
+                return True
+            free_keys.remove(key_to_use)
+            new_msg_ids[key] = msg_ids[key_to_use]
+            return False
 
-    # create new messages for any remaining keys that weren't assigned to
+        return list(filter(attempt_map, unmapped)), free_keys, new_msg_ids
+
+    unmapped     = key_to_new_msg.keys()  # keys of new messages needing to be mapped
+    free_keys    = key_to_msg.keys()      # keys of existing messages we can reuse
+    new_msg_ids = {}                      # mapping from new message key -> msg_id
+
+    """
+    Apply the mapping strategies. We want to try a single strategy on all
+    messages before moving on to the next strategy, so that the 'best' one is
+    applied as often as possible.
+    """
+    unmapped, free_keys, new_msg_ids = try_map(no_change,  unmapped, free_keys, new_msg_ids)
+    unmapped, free_keys, new_msg_ids = try_map(change_key, unmapped, free_keys, new_msg_ids)
+    unmapped, free_keys, new_msg_ids = try_map(change_msg, unmapped, free_keys, new_msg_ids)
+
+    # create new messages for anything that wasn't mapped to an existing message
     for key in unmapped:
         print(f"None -> {key} (send_msg)")
-        next_msg_ids[key] = await bot.send_message(chan_id, content=key_to_next_msg[key])
+        new_msg_ids[key] = await bot.send_message(chan_id, content=key_to_new_msg[key])
 
     # delete unused messages
     for key in free_keys:
         print(f"{key} -> {None} (del_msg)")
         await bot.delete_message(chan_id, msg_ids[key])
 
-    return next_msg_ids
+    return new_msg_ids
