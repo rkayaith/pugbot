@@ -175,18 +175,16 @@ async def test_update_append_hist(mock_bot, chan_id):
 
 
 @pytest.mark.asyncio
-@pytest.mark.skip("Current algo sometimes chooses suboptimal mapping")
-async def test_update_test(mock_bot, chan_id):
+async def test_update_remap_optimal(mock_bot, chan_id):
     """
     The optimal mapping is:
-        curr_dup -> prev, curr -> curr, prev -> None
-    but currently the algo might randomly choose:
-        curr -> prev, None -> curr, prev -> None, curr_dup -> None
-    (the 'curr -> prev' mapping is randomly chosen over 'curr_dup -> prev')
+        curr2 -> prev, curr -> curr, prev -> None
+    but if the 'curr -> prev' mapping is chosen over 'curr2 -> prev' you get:
+        curr -> prev, None -> curr, prev -> None, curr2 -> None
     """
-    prev_msgs  = { 'prev': 'prev_msg', 'curr': 'curr_msg', 'curr_dup': 'curr_msg' }
+    prev_msgs  = { 'prev': 'prev_msg', 'curr': 'curr_msg', 'curr2': 'curr_msg' }
     next_msgs  = { 'prev': 'curr_msg', 'curr': 'next_msg' }
-    msg_id_map = { 'prev': 0, 'curr': 1, 'curr_dup': 2 }
+    msg_id_map = { 'prev': 0, 'curr': 1, 'curr2': 2 }
 
     exp_id_map = { 'prev': 2, 'curr': 1 }
     exp_edits  = [call(chan_id, exp_id_map['curr'], content=next_msgs['curr'])]
