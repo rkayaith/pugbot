@@ -280,6 +280,55 @@ class IdleState(PugState):
         # captains = captains | { self.bot.user }; hosts = hosts | { self.bot.user }; players = players | set(map(self.msg.channel.guild.get_member, [723040252683616277, 723041156208001057, 723314051811115119, 723314517806678097, 723333772099190794, 723342828243255310, 723343877817499689])) # TODO: remove this hack
         return VoteState.make(self.bot, None, self.notice, hosts, captains, players)
 
+        # TEST
+        reacts = { **reacts, main: reacts[main] | { (HOST_EMOJI, bot.user.id), (CAPT_EMOJI, bot.user.id) } }
+        reacts = reacts | { (HOST_EMOJI, bot.user.id), (CAPT_EMOJI, bot.user.id) }
+
+        reacts = reacts | { React(bot.user.id, e) for e in (HOST_EMOJI, CAPT_EMOJI) }
+        reacts = { **reacts, main: reacts[main] | { React(bot.user.id, e) for e in (HOST_EMOJI, CAPT_EMOJI) } }
+
+        owner_skip = { (SKIP_EMOJI, owner) for owner in self.owners }
+        owner_wait = { (WAIT_EMOJI, owner) for owner in self.owners }
+
+        hosts = { r for r in reacts[main] if r.emoji == HOST_EMOJI }
+        capts = { r for r in reacts[main] if r.emoji == CAPT_EMOJI }
+        players = reacts[main] - hosts - owner_skip - owner_wait
+        yield (state := replace(state, reacts=reacts, hosts=hosts, capts=capts, players=players))
+
+        # if we're still waiting for people, stay in the idle state
+        still_waiting = len(hosts) < MIN_HOSTS or len(capts) < MIN_CAPTS or len(players) < MIN_PLAYERS
+        end_early     = bool(owner_skip & reacts[main])
+        keep_waiting  = bool(owner_wait & reacts[main])
+
+        if keep_waiting or (still_waiting and not end_early):
+            return
+
+        # if anyone is idle, remove them
+        afks = { r for r in hosts | capts | players if get_status(bot, r.user) != Status.online }
+        if afks:
+            reacts = { *reacts, main: reacts[main] - afks }
+            history = (*state.history, f'Removing afk players: {",",join(mention(bot, id) for _, id in afks)}')
+            history = { **state.history, uid(): f'Removing afk players: {",",join(mention(bot, id) for _, id in afks)}' }
+            async for state in state.on_update(bot, reacts=reacts, history=history):
+                yield state
+            return
+
+        # go to voting stage.
+        # we add the current message to history so it doesn't get deleted.
+        m_id = uid()
+        history = { **state.history, m_id: state.msg() }
+        reacts = { **reacts, m_id: reacts[main], main: fset() }
+
+        history = (*state.history, state.msg())
+        reacts = { **reacts, len(state.history): reacts[main], main: fset() }
+        state = replace(state, history=history, reacts=reacts)
+
+        host_ids   = list(map(hosts, get(0)))
+        capt_ids   = list(map(capts, get(0)))
+        player_ids = list(map(players, get(0)))
+        yield VoteState.make(state, host_ids, capt_ids, player_ids)
+
+
 
 @dataclass(frozen=True)
 class VoteState(PugState):

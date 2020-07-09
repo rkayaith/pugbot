@@ -81,122 +81,50 @@ async def schedule_state_update(status, channel_id, update_reacts, run_update=ru
 
 
 """ sketch """
+@dataclass
+class ChanCtx:
+    lock: Lock
+    msg_id_map: int
+    reactions: frozenset
 
-def on_react_add(react, channel_id, msg_id):
-    if msg_id not in status.msgs_to_watch:
-        return
-    def on_update(functor):
-        def f(prev):
-            n = functor(prev)
-            status.msgs_to_watch = state.msg_to_watch - p.msg_ids | { n.msg_id }
-        return f
+async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
+    async with ctx.lock:
+        # we only track reacts to the main message
+        # TODO: track reacts to all messages?
+        if msg_id != msg_id_map[main]:
+            return
+        ctx.reacts = (reacts := frozenset(update_fn(ctx.reacts)))
+        prev_state = ctx.state
 
+    async for next_state in prev_state.on_update(bot, reacts=reacts):
+        async with ctx.lock:
+            # if someone changed the state while we were getting the next one,
+            # so we can stop here
+            if ctx.state is not prev_state:
+                return
 
-    tasks[channel_id], result = schedule_task(tasks[channel_id], update_reacts(lambda r: r | { react }))
-    await result
+            # apply changes to discord
+            tasks = update_discord(bot, ctx, chan_id, prev_state, next_state)
+            await asyncio.gather(tasks)
+        prev_state = next_state
 
+main = 'main'
 
-msg_id_update = Observable()
+get_channel(bot, chan_id) = None
 
-@msg_id_update.watch
-def msgs_to_watch(prev_msg_ids, next_msg_ids, curr_val = fset()):
-    return curr_val - prev_msg_ids | next_msg_ids
-
-class Observable:
-    subbers: list
-    values: dict
-
-    def sub(func):
-        self.subbers.append(func)
-
-    def unsub(func):
-        self.subbers.remove(func)
-
-    def pub(*args):
-        for func in self.subbers:
-            func(*args)
-
-    def watch(func):
-        def update_value(*args):
-            args = (*args, self.values[func]) if func in self.values else args
-            self.values[func] = func(*args)
-        self.sub(update_value)
-        return (lambda: self.values[func])
-
-    @contextmanager
-    def collect():
-        events = []
-        collect_event = lambda *event: events.append(event)
-        self.sub(collect_event)
-        yield events
-        self.unsub(collect_event)
-
-def some_watch_fn(
-msg_ids
-msg_ids = defaultdict(lambda: (o := Observable(), o.watch(some_watch_fn))[0])
+async def update_discord(bot, ctx, chan_id, prev_state, next_state):
+    # update message content
+    tasks = []
+    if prev_state != next_state:
+        prev_msgs, next_msgs = prev_state.msgs(), next_state.msgs()
+        for key, msg in next_msgs.items():
+            if key in ctx.msg_id_map:
+                msg_id = ctx.msg_id_map[key]
+                await 
+            else:
+                ctx.msg_id_map[key] = await bot.send_message(chan_id, 
+                tasks.append(bot.send_messageget_channel(bot, chan_id).send(msg))
 
 
-on_change = [
-    lambda p, n: g.msgs_to_watch = msgs_to_watch(g.msgs_to_watch, p, n),
-    lambda p, n: g.
-]
 
-async def update_discord(msg_ids, prev_state, next_state):
-    
-
-"""
-Per-channel states:
-    current state/task
-    msg_ids
-
-Observable: state[channel_id]
-Subscribers:
-    - update_discord(bot?, channel, prev, next)
-    - msgs_to_watch(prev, next)
-    - channel_to_msg_ids
-
-on_reaction():
-1. check msg_ids[channel_id].values()
-2. wait for tasks[channel_id]
-3. set tasks[channel_id] to task that calls on_update():
-    for each substate:
-        update discord state (bot, chan_id, msg_ids, prev_state, next_state) -> msg_ids
-        update msg_ids[channel_id]
-    return last substate
-
-start_pug():
-1. check msg_ids[channel_id].values()
-2. wait for tasks[channel_id]
-3. set tasks[channel_id] to task that sets next state to WaitingState
-4. update discord state (msg_ids, prev_state, next_state) -> msg_ids
-5. update msg_ids[channel_id]
-
-react_add >> states >> discord -> msg_id_map
-react_rem >>
-set_state >>
-
-react -> react_filter(channel) -> update_state -> discordify
-      |                                               |
-      +-----------------------------------------------+
-"""
-
-tasks = pipe() >> (
-            sched_task,
-            scan(update_state),
-            with_prev(update_discord),
-            lambda channel, msg_ids: g_msg_ids[channel] = msg_ids),
-        )
-
-curr_state = PugState()
-msg_ids = frozenset()
-while True:
-    updates = list(update_queue)
-    update_queue.clear()
-
-    next_thing = await first(state_update_iter, incoming_message)
-    if next_thing is state_update_iter:
-        curr_state = next_thing.result()
-    else:
-        msg_id, reaction = next_thing.result()
-        if 
 
