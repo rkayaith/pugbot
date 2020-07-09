@@ -93,7 +93,8 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_next_msg):
     def change_key(key, msg, free_keys):
         # different_key, msg -> key, msg
         if (cand_keys := msg_to_keys[msg] & free_keys):
-            # prioritize keys that can't be used by change_msg()
+            # prioritize keys that can't be used by change_msg(). there might
+            # still be broken edge cases here, not sure...
             key_to_use = next(chain(cand_keys - key_to_next_msg.keys(), cand_keys))
             print(f"{key_to_use} -> {key} (change_key)")
             return key_to_use
