@@ -172,3 +172,28 @@ async def test_update_append_hist(mock_bot, chan_id):
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.skip("Current algo sometimes chooses suboptimal mapping")
+async def test_update_test(mock_bot, chan_id):
+    """
+    The optimal mapping is:
+        curr_dup -> prev, curr -> curr, prev -> None
+    but currently the algo might randomly choose:
+        curr -> prev, None -> curr, prev -> None, curr_dup -> None
+    (the 'curr -> prev' mapping is randomly chosen over 'curr_dup -> prev')
+    """
+    prev_msgs  = { 'prev': 'prev_msg', 'curr': 'curr_msg', 'curr_dup': 'curr_msg' }
+    next_msgs  = { 'prev': 'curr_msg', 'curr': 'next_msg' }
+    msg_id_map = { 'prev': 0, 'curr': 1, 'curr_dup': 2 }
+
+    exp_id_map = { 'prev': 2, 'curr': 1 }
+    exp_edits  = [call(chan_id, exp_id_map['curr'], content=next_msgs['curr'])]
+    exp_dels   = [call(chan_id, msg_id_map['prev'])]
+
+    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
+                                              prev_msgs, next_msgs)
+    assert mock_bot.edit_message.call_args_list == exp_edits
+    assert mock_bot.send_message.call_count == 0
+    assert mock_bot.delete_message.call_args_list == exp_dels

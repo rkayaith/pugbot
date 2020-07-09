@@ -59,61 +59,83 @@ def invert_dict(d):
         inv.setdefault(val, set()).add(key)
     return inv
 
+def as_fut(obj):
+    fut = asyncio.Future()
+    fut.set_result(obj)
+    return fut
+
 async def update_discord(bot, chan_id, prev_msg_ids, prev_msgs, next_msgs):
     assert prev_msg_ids.keys() == prev_msgs.keys()
 
-    next_msg_ids = {}
+    msg_to_prev_keys = invert_dict(prev_msgs)
 
-    tasks = []
-    msg_to_prev_key = invert_dict(prev_msgs)
-
-
-    remaining_items = set(next_msgs.items())
-
-    # for existing messages with an unchanged key, use the previous message id
-    for key, msg in list(remaining_items):
+    def no_change(key, msg):
         if msg == prev_msgs.get(key):
-            # this message already exists with the same key.
-            remaining_items.remove((key, msg))
-            msg_to_prev_key[msg].remove(key)
-            next_msg_ids[key] = prev_msg_ids[key]
+            print(f"{key} -> {key} (no_change)")
+            return (key, msg), as_fut(prev_msg_ids[key])
 
-    # for existing messages with a changed but existing key,
-    # try to use the existing key's id
-    for key, msg in list(remaining_items):
-        if msg_to_prev_key.get(msg):
-            # message exists but with a different key.
-            remaining_items.remove((key, msg))
-            prev_key = msg_to_prev_key[msg].pop()
-            next_msg_ids[key] = prev_msg_ids[prev_key]
+    def remap_id(key, msg):
+        # if there's already a message with the same content but a different key,
+        # remap that message id to this key
+        if (existing_keys := msg_to_prev_keys.get(msg)):
+            prev_key = next(iter(existing_keys))  # just pick one randomly TODO: prioritize keys that can't be used by edit_msg()
+            print(f"{prev_key} -> {key} (remap_id)")
+            return (prev_key, msg), as_fut(prev_msg_ids[prev_key])
 
-    # for new messages with an existing key,
-    # try to use the existing key's id and edit the message
-    for key, msg in list(remaining_items):
-        if key in prev_msgs and msg_to_prev_key[prev_msgs[key]]:
-            # key existed before with a different message, **and is still unused**
-            remaining_items.remove((key, msg))
-            msg_to_prev_key[prev_msgs[key]].remove(key)
-            next_msg_ids[key] = prev_msg_ids[key]
-            await bot.edit_message(chan_id, next_msg_ids[key], content=msg)
+    def edit_msg(key, msg):
+        if (prev_msg := prev_msgs.get(key)) is not None:
+            # a message with this key exists
+            if key in msg_to_prev_keys[prev_msg]:
+                # that message hasn't been mapped yet
+                # reuse the message and edit it's content
+                print(f"{key} -> {key} (edit)")
+                async def edit():
+                    # TODO: not the best way to do this...
+                    bot.edit_message(chan_id, prev_msg_ids[key], content=msg)
+                    return prev_msg_ids[key]
+                return (key, prev_msg), edit()
 
-    # for remaining messages, create a new message
-    for key, msg in list(remaining_items):
-        # TODO: make an assertion or something
-        next_msg_ids[key] = await bot.send_message(chan_id, content=msg)
+    def send_msg(key, msg):
+        print(f"None -> {key} (send)")
+        return None, bot.send_message(chan_id, content=msg)
+
+
+    next_msg_ids = {}
+    def try_map(map_func):
+        def filter_fn(item):
+            key, msg = item
+            if (ret := map_func(key, msg)) is None:
+                # mapping failed, keep 'item'
+                return True
+
+            prev_value, msg_id = ret
+            next_msg_ids[key] = msg_id
+            if prev_value is not None:
+                # remove 'prev_key' from the set of available keys left to be mapped
+                prev_key, prev_msg = prev_value
+                msg_to_prev_keys[prev_msg].remove(prev_key)
+
+            # mapping succeeded, filter out 'item'
+            return False
+        return filter_fn
+
+
+    msgs_to_map = next_msgs.items()
+    msgs_to_map = list(filter(try_map(no_change), msgs_to_map))
+    msgs_to_map = list(filter(try_map(remap_id), msgs_to_map))
+    msgs_to_map = list(filter(try_map(edit_msg), msgs_to_map))
+    msgs_to_map = list(filter(try_map(send_msg), msgs_to_map))
+    assert len(msgs_to_map) == 0
+
+    # TODO: bleh. find another way
+    next_msg_ids = { key: await msg_id for key, msg_id in next_msg_ids.items() }
 
     # delete unused messages
-    for keys in msg_to_prev_key.values():
+    for keys in msg_to_prev_keys.values():
         for key in keys:
             await bot.delete_message(chan_id, prev_msg_ids[key])
 
     return next_msg_ids
-
-
-    # new msg:     key not in prev_msgs
-    # unchanged:   msg is prev_msgs[key]
-    # key changed: msg is not prev_msgs[key] and msg in (unclaimed) prev_msgs.values()
-    # msg changed: msg is not prev_msgs[key] and msg_ids[key] is available
 
     """
     # update message content
