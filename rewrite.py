@@ -81,12 +81,6 @@ async def schedule_state_update(status, channel_id, update_reacts, run_update=ru
 
 
 """ sketch """
-@dataclass
-class ChanCtx:
-    lock: Lock
-    msg_id_map: int
-    reactions: frozenset
-
 async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
     async with ctx.lock:
         # we only track reacts to the main message
@@ -107,24 +101,3 @@ async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
             tasks = update_discord(bot, ctx, chan_id, prev_state, next_state)
             await asyncio.gather(tasks)
         prev_state = next_state
-
-main = 'main'
-
-get_channel(bot, chan_id) = None
-
-async def update_discord(bot, ctx, chan_id, prev_state, next_state):
-    # update message content
-    tasks = []
-    if prev_state != next_state:
-        prev_msgs, next_msgs = prev_state.msgs(), next_state.msgs()
-        for key, msg in next_msgs.items():
-            if key in ctx.msg_id_map:
-                msg_id = ctx.msg_id_map[key]
-                await 
-            else:
-                ctx.msg_id_map[key] = await bot.send_message(chan_id, 
-                tasks.append(bot.send_messageget_channel(bot, chan_id).send(msg))
-
-
-
-

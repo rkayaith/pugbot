@@ -1,3 +1,9 @@
+import asyncio
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import chain
+from operator import attrgetter as get
+
 from discord import Embed, Message
 from discord.ext import commands
 
@@ -41,37 +47,57 @@ class Bot(commands.Bot):
     def clear_reactions(self, chan_id, msg_id):
         return self._connection.http.clear_reactions(chan_id, msg_id)
 
-import asyncio
-from dataclasses import dataclass
-from collections import defaultdict
-from itertools import chain
-
 @dataclass
 class ChanCtx:
     lock: asyncio.Lock
     msg_id_map: int
     reactions: frozenset
 
+
+def create_index(iterable, index_fn):
+    """
+    Return an index of 'iterable' using 'index_fn', i.e.
+        index[i] = { the set of elements with index_fn(elem) == i }
+    """
+    index = {}
+    for elem in iterable:
+        index.setdefault(index_fn(elem), set()).add(elem)
+    return index
+
 def invert_dict(d):
     """
-    Return the dictionary 'inv', where
-        inv[v] = { the set of keys in 'd' that map to 'v' }
+    Returns the inverse of dictionary 'd', i.e.
+        inv[val] = { the set of keys in 'd' that map to 'val' }
     """
-    inv = {}
-    for key, val in d.items():
-        inv.setdefault(val, set()).add(key)
-    return inv
+    vals = iter(d.values())
+    return create_index(d, lambda _: next(vals))
 
 def as_fut(obj):
     fut = asyncio.Future()
     fut.set_result(obj)
     return fut
 
-async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg):
+def retval_as_fut(coro):
+    """
+    Returns a future that holds the eventual result of 'coro', and a new
+    coroutine that should be awaited instead of 'coro'.
+    """
+    fut = asyncio.Future()
+    async def wrapped_coro():
+        fut.set_result(await coro)
+    return fut, wrapped_coro()
+
+
+async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, reacts, new_reacts):
     assert msg_ids.keys() == key_to_msg.keys()
 
-    # create a mapping from message content to# keys of messages with the that content
+    # create a mapping from message content -> keys of messages with that content
     msg_to_keys = defaultdict(set, invert_dict(key_to_msg))
+
+    # awaitables to run. we'll only run these at the very end, so that if an
+    # error happens halfway through this function we won't leave discord in a
+    # half-updated state.
+    aws = []
 
     """
     Each of these functions takes the key and content of a message that will be
@@ -96,49 +122,82 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg):
     def change_msg(key, msg, free_keys):
         if key in free_keys:
             assert msg != key_to_msg[key]
-            bot.edit_message(chan_id, msg_ids[key], content=msg)  # TODO: await this
+            aws.append(bot.edit_message(chan_id, msg_ids[key], content=msg))
             print(f"{key} -> {key} (change_msg)")
             return key
 
 
-    def try_map(map_func, unmapped, free_keys, new_msg_ids):
+    def try_map(map_func, unmapped, free_keys, msg_id_futs):
         """
         Take a mapping function and try and apply it to a set of unmapped messages.
         Returns the keys of messages it wasn't able to map.
         """
         # copy inputs so we can modify them
-        free_keys, new_msg_ids = set(free_keys), dict(new_msg_ids)
+        free_keys, msg_id_futs = set(free_keys), dict(msg_id_futs)
 
         def attempt_map(key):
             if (key_to_use := map_func(key, key_to_new_msg[key], free_keys)) is None:
                 return True
             free_keys.remove(key_to_use)
-            new_msg_ids[key] = msg_ids[key_to_use]
+            msg_id_futs[key] = as_fut(msg_ids[key_to_use])
             return False
 
-        return list(filter(attempt_map, unmapped)), free_keys, new_msg_ids
+        return list(filter(attempt_map, unmapped)), free_keys, msg_id_futs
 
     unmapped     = key_to_new_msg.keys()  # keys of new messages needing to be mapped
     free_keys    = key_to_msg.keys()      # keys of existing messages we can reuse
-    new_msg_ids = {}                      # mapping from new message key -> msg_id
+    msg_id_futs  = {}                     # mapping from new message key -> id future
 
     """
     Apply the mapping strategies. We want to try a single strategy on all
     messages before moving on to the next strategy, so that the 'best' one is
     applied as often as possible.
     """
-    unmapped, free_keys, new_msg_ids = try_map(no_change,  unmapped, free_keys, new_msg_ids)
-    unmapped, free_keys, new_msg_ids = try_map(change_key, unmapped, free_keys, new_msg_ids)
-    unmapped, free_keys, new_msg_ids = try_map(change_msg, unmapped, free_keys, new_msg_ids)
+    unmapped, free_keys, msg_id_futs = try_map(no_change,  unmapped, free_keys, msg_id_futs)
+    unmapped, free_keys, msg_id_futs = try_map(change_key, unmapped, free_keys, msg_id_futs)
+    unmapped, free_keys, msg_id_futs = try_map(change_msg, unmapped, free_keys, msg_id_futs)
 
     # create new messages for anything that wasn't mapped to an existing message
     for key in unmapped:
         print(f"None -> {key} (send_msg)")
-        new_msg_ids[key] = await bot.send_message(chan_id, content=key_to_new_msg[key])
+        msg_id_futs[key], coro = retval_as_fut(bot.send_message(chan_id, content=key_to_new_msg[key]))
+        aws.append(coro)
 
     # delete unused messages
     for key in free_keys:
         print(f"{key} -> {None} (del_msg)")
-        await bot.delete_message(chan_id, msg_ids[key])
+        aws.append(bot.delete_message(chan_id, msg_ids[key]))
 
-    return new_msg_ids
+
+    # we only track reacts for the "main" message
+    main_key     = next(iter(key_to_msg), None)
+    new_main_key = next(iter(key_to_new_msg), None)
+    main_id      = msg_ids.get(main_key)
+    main_id_fut  = msg_id_futs.get(new_main_key, as_fut(None))
+
+    # if we're tracking a different message now, we assume it has no reacts
+    if not main_id_fut.done() or main_id_fut.result() != main_id:
+        reacts = set()
+
+    async def add_react(msg_id_fut, emoji):
+        await bot.add_reaction(chan_id, await msg_id_fut, emoji)
+    # add reactions to new main message
+    for user_id, emoji in new_reacts - reacts:
+        assert user_id == bot.user_id  # we can only add reactions from the bot
+        aws.append(add_react(main_id_fut, emoji))
+
+    # remove reactions from old main message
+    # TODO: use clear_reactions() where possible
+    new_emojis = { r.emoji for r in new_reacts }
+    removed_reacts = create_index(reacts - new_reacts, get('emoji'))
+    for emoji, reacts in removed_reacts.items():
+        # if we're deleting all reacts with a certain emoji AND deleting more
+        # than one, we can use clear_reaction().
+        if emoji not in new_emojis and len(reacts) > 1:
+            aws.append(bot.clear_reaction(chan_id, main_id, emoji))
+        else:
+            aws.extend(bot.remove_reaction(chan_id, main_id, emoji, r.user_id)
+                       for r in reacts)
+
+    await asyncio.gather(*aws)
+    return { key: id_fut.result() for key, id_fut in msg_id_futs.items() }

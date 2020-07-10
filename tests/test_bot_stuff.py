@@ -1,11 +1,38 @@
+from asyncio import Future
 import pytest
+from unittest.mock import MagicMock, call, create_autospec
 
 from discord import Embed, Emoji, Object
-from bot_stuff import Bot, ChanCtx, update_discord
-from collections import namedtuple
+
+from bot_stuff import Bot, ChanCtx, as_fut, update_discord
+from rewrite import React
+
+@pytest.fixture
+def chan_id():
+    return 100
+
+@pytest.fixture
+def bot():
+    return Bot(command_prefix='dont care')
+
+@pytest.fixture
+def mock_bot(bot):
+    mock_bot = create_autospec(bot)
+    # create_autospec() doesn't know that some functions return awaitables,
+    # so we have to manually fix those
+    mock_bot.send_message.return_value = as_fut(MagicMock())
+    mock_bot.edit_message.return_value = as_fut(None)
+    mock_bot.delete_message.return_value = as_fut(None)
+
+    mock_bot.add_reaction.return_value = as_fut(None)
+    mock_bot.remove_reaction.return_value = as_fut(None)
+    mock_bot.clear_reaction.return_value = as_fut(None)
+
+    return mock_bot
+
 
 @pytest.mark.filterwarnings("ignore:coroutine")  # ignore un-awaited coroutine warnings
-def test_bot(bot, chan_id):
+def test_bot_methods(bot, chan_id):
     msg_id = user_id = 1
     content = 'content'
     embed = Embed(title='embed')
@@ -30,61 +57,34 @@ def test_bot(bot, chan_id):
 
     bot.clear_reactions(chan_id, msg_id)
 
-from unittest.mock import call, create_autospec, MagicMock
-from asyncio import Future
-
-def as_fut(thing):
-    fut = Future()
-    fut.set_result(thing)
-    return fut
-
-@pytest.fixture
-def chan_id():
-    return 100
-
-@pytest.fixture
-def bot():
-    return Bot(command_prefix='dont care')
-
-@pytest.fixture
-def mock_bot(bot):
-    mock_bot = create_autospec(bot)
-    # create_autospec() doesn't know that some functions return awaitables,
-    # so we have to manually fix those
-    mock_bot.send_message.return_value = as_fut(MagicMock())
-    mock_bot.edit_message.return_value = as_fut(None)
-    mock_bot.delete_message.return_value = as_fut(None)
-
-    return mock_bot
-
 @pytest.mark.asyncio
-async def test_update_noop(mock_bot, chan_id):
+async def test_update_msgs_noop(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
     next_msgs  = prev_msgs
     msg_id_map = { 'cat': 0, 'dog': 1 }
     exp_id_map   = msg_id_map
 
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                            prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_swap_key(mock_bot, chan_id):
+async def test_update_msgs_swap_key(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
     next_msgs  = { 'cat': 'dog_msg', 'dog': 'cat_msg' }
     msg_id_map = { 'cat': 0, 'dog': 1 }
 
     exp_id_map = { 'cat': 1, 'dog': 0 }
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                            prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_edit(mock_bot, chan_id):
+async def test_update_msgs_edit(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
     next_msgs  = { 'cat': 'cat_msg', 'dog': 'a_different_dog_msg' }
     msg_id_map = { 'cat': 0, 'dog': 1 }
@@ -93,13 +93,13 @@ async def test_update_edit(mock_bot, chan_id):
     exp_edits  = [call(chan_id, exp_id_map['dog'], content=next_msgs['dog'])]
 
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                            prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_edit_duplicate(mock_bot, chan_id):
+async def test_update_msgs_edit_duplicate(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog_then_cat': 'dog_msg' }
     next_msgs  = { 'cat': 'cat_msg', 'dog_then_cat': 'cat_msg' }
     msg_id_map = { 'cat': 0, 'dog_then_cat': 1 }
@@ -108,14 +108,14 @@ async def test_update_edit_duplicate(mock_bot, chan_id):
     exp_edits  = [call(chan_id, exp_id_map['dog_then_cat'], content=next_msgs['dog_then_cat'])]
 
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                            prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_update_send(mock_bot, chan_id):
+async def test_update_msgs_send(mock_bot, chan_id):
     mock_bot.send_message.side_effect = [as_fut('new_msg_id')]
     prev_msgs  = { 'cat': 'cat_msg' }
     next_msgs  = { 'cat': 'cat_msg', 'dog': 'cat_msg' }
@@ -124,13 +124,13 @@ async def test_update_send(mock_bot, chan_id):
     exp_id_map = { 'cat': 0, 'dog': 'new_msg_id' }
     exp_sends  = [call(chan_id, content=next_msgs['dog'])]
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_send_duplicate(mock_bot, chan_id):
+async def test_update_msgs_send_duplicate(mock_bot, chan_id):
     mock_bot.send_message.side_effect = [as_fut('new_msg_id')]
     prev_msgs  = { 'cat': 'cat_msg' }
     next_msgs  = { 'cat': 'cat_msg', 'another_cat': 'cat_msg' }
@@ -139,13 +139,13 @@ async def test_update_send_duplicate(mock_bot, chan_id):
     exp_id_map = { 'cat': 0, 'another_cat': 'new_msg_id' }
     exp_sends  = [call(chan_id, content=next_msgs['another_cat'])]
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_delete(mock_bot, chan_id):
+async def test_update_msgs_delete(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
     next_msgs  = { 'cat': 'cat_msg' }
     msg_id_map = { 'cat': 0, 'dog': 1 }
@@ -153,13 +153,13 @@ async def test_update_delete(mock_bot, chan_id):
     exp_id_map = { 'cat': 0 }
     exp_dels   = [call(chan_id, msg_id_map['dog'])]
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_args_list == exp_dels
 
 @pytest.mark.asyncio
-async def test_update_append_hist(mock_bot, chan_id):
+async def test_update_msgs_append_hist(mock_bot, chan_id):
     mock_bot.send_message.side_effect = [as_fut('new_msg_id')]
     prev_msgs  = { 'hist0': 'old_msg', 'newest': 'old_msg' }
     next_msgs  = { 'hist0': 'old_msg', 'hist1': 'old_msg', 'newest': 'new_msg' }
@@ -168,14 +168,14 @@ async def test_update_append_hist(mock_bot, chan_id):
     exp_id_map = { 'hist0': 0, 'hist1': 1, 'newest': 'new_msg_id' }
     exp_sends  = [call(chan_id, content=next_msgs['newest'])]
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_update_remap_optimal(mock_bot, chan_id):
+async def test_update_msgs_remap_optimal(mock_bot, chan_id):
     """
     The optimal mapping is:
         curr2 -> prev, curr -> curr, prev -> None
@@ -191,7 +191,69 @@ async def test_update_remap_optimal(mock_bot, chan_id):
     exp_dels   = [call(chan_id, msg_id_map['prev'])]
 
     assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs)
+                                              prev_msgs, next_msgs, set(), set())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_args_list == exp_dels
+
+
+@pytest.mark.asyncio
+async def test_update_msgs_remap_optimal(mock_bot, chan_id):
+    """
+    The optimal mapping is:
+        curr2 -> prev, curr -> curr, prev -> None
+    but if the 'curr -> prev' mapping is chosen over 'curr2 -> prev' you get:
+        curr -> prev, None -> curr, prev -> None, curr2 -> None
+    """
+    prev_msgs  = { 'prev': 'prev_msg', 'curr': 'curr_msg', 'curr2': 'curr_msg' }
+    next_msgs  = { 'prev': 'curr_msg', 'curr': 'next_msg' }
+    msg_id_map = { 'prev': 0, 'curr': 1, 'curr2': 2 }
+
+    exp_id_map = { 'prev': 2, 'curr': 1 }
+    exp_edits  = [call(chan_id, exp_id_map['curr'], content=next_msgs['curr'])]
+    exp_dels   = [call(chan_id, msg_id_map['prev'])]
+
+    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
+                                              prev_msgs, next_msgs, set(), set())
+    assert mock_bot.edit_message.call_args_list == exp_edits
+    assert mock_bot.send_message.call_count == 0
+    assert mock_bot.delete_message.call_args_list == exp_dels
+
+
+@pytest.mark.asyncio
+async def test_update_reacts_noop(mock_bot, chan_id):
+    prev_msgs = next_msgs = { 'key': 'msg' }
+    msg_id_map = { k: k for k in prev_msgs }
+
+    prev_reacts = { React('bob', 'XD') }
+    next_reacts = prev_reacts
+
+    await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, prev_reacts, next_reacts)
+    assert mock_bot.add_reaction.call_count == 0
+    assert mock_bot.remove_reaction.call_count == 0
+    assert mock_bot.clear_reaction.call_count == 0
+    assert mock_bot.clear_reactions.call_count == 0
+
+@pytest.mark.asyncio
+async def test_update_reacts_add(mock_bot, chan_id):
+    bot_id = mock_bot.user_id
+
+    prev_msgs = next_msgs = { 'key': 'msg' }
+    msg_id_map = { 'key': 'msg_id' }
+
+    prev_reacts = {
+        React('bob', 'XD'), React('alice', 'XD'),
+        React('tom', 'uwu'), React('joe', 'uwu'),
+        React('bob', 'cap'), React('joe', 'cap'), React('tom', 'cap')
+    }
+    next_reacts = { React('bob', 'XD'), React(bot_id, 'XD'), React('bob', 'cap') }
+
+    exp_adds = [call(chan_id, 'msg_id', 'XD')]
+    exp_rems = [call(chan_id, 'msg_id', 'XD', 'alice'), call(chan_id, 'msg_id', 'cap', 'joe'), call(chan_id, 'msg_id', 'cap', 'tom')]
+    exp_clrs = [call(chan_id, 'msg_id', 'uwu')]
+
+    await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, prev_reacts, next_reacts)
+    assert mock_bot.add_reaction.call_args_list == exp_adds
+    assert sorted(mock_bot.remove_reaction.call_args_list) == sorted(exp_rems)
+    assert mock_bot.clear_reaction.call_args_list == exp_clrs
+    assert mock_bot.clear_reactions.call_count == 0
