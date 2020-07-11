@@ -2,10 +2,11 @@ from asyncio import Future
 import pytest
 from unittest.mock import MagicMock, call, create_autospec
 
-from discord import Embed, Emoji, Object
+from discord import Embed
 
-from bot_stuff import Bot, ChanCtx, as_fut, update_discord
-from rewrite import React
+from rewrite import ChanCtx, React
+from bot_stuff import Bot, update_discord
+from utils import as_fut
 
 @pytest.fixture
 def chan_id():

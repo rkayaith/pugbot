@@ -1,11 +1,12 @@
 import asyncio
 from collections import defaultdict
-from dataclasses import dataclass
 from itertools import chain, starmap
 from operator import attrgetter as get
 
-from discord import Embed, Message
+from discord import Message
 from discord.ext import commands
+
+from utils import as_fut, retval_as_fut, create_index, invert_dict
 
 # TODO: rename file to discord_stuff?
 
@@ -46,46 +47,6 @@ class Bot(commands.Bot):
 
     def clear_reactions(self, chan_id, msg_id):
         return self._connection.http.clear_reactions(chan_id, msg_id)
-
-@dataclass
-class ChanCtx:
-    lock: asyncio.Lock
-    msg_id_map: int
-    reactions: frozenset
-
-
-def create_index(iterable, index_fn):
-    """
-    Return an index of 'iterable' using 'index_fn', i.e.
-        index[i] = { the set of elements with index_fn(elem) == i }
-    """
-    index = {}
-    for elem in iterable:
-        index.setdefault(index_fn(elem), set()).add(elem)
-    return index
-
-def invert_dict(d):
-    """
-    Returns the inverse of dictionary 'd', i.e.
-        inv[val] = { the set of keys in 'd' that map to 'val' }
-    """
-    vals = iter(d.values())
-    return create_index(d, lambda _: next(vals))
-
-def as_fut(obj):
-    fut = asyncio.Future()
-    fut.set_result(obj)
-    return fut
-
-def retval_as_fut(coro):
-    """
-    Returns a future that holds the eventual result of 'coro', and a new
-    coroutine that should be awaited instead of 'coro'.
-    """
-    fut = asyncio.Future()
-    async def wrapped_coro():
-        fut.set_result(await coro)
-    return fut, wrapped_coro()
 
 
 async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_reacts, new_reacts):
