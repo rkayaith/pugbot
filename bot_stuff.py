@@ -1,7 +1,7 @@
 import asyncio
 from collections import defaultdict
 from dataclasses import dataclass
-from itertools import chain
+from itertools import chain, starmap
 from operator import attrgetter as get
 
 from discord import Embed, Message
@@ -88,7 +88,7 @@ def retval_as_fut(coro):
     return fut, wrapped_coro()
 
 
-async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, reacts, new_reacts):
+async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_reacts, new_reacts):
     assert msg_ids.keys() == key_to_msg.keys()
 
     # create a mapping from message content -> keys of messages with that content
@@ -176,28 +176,40 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, reac
     main_id_fut  = msg_id_futs.get(new_main_key, as_fut(None))
 
     # if we're tracking a different message now, we assume it has no reacts
+    # TODO: should we remove all the reacts from the old message?
     if not main_id_fut.done() or main_id_fut.result() != main_id:
-        reacts = set()
+        old_reacts = set()
 
     async def add_react(msg_id_fut, emoji):
         await bot.add_reaction(chan_id, await msg_id_fut, emoji)
-    # add reactions to new main message
-    for user_id, emoji in new_reacts - reacts:
+    # add reactions to the new main message
+    for user_id, emoji in new_reacts - old_reacts:
         assert user_id == bot.user_id  # we can only add reactions from the bot
         aws.append(add_react(main_id_fut, emoji))
 
     # remove reactions from old main message
-    # TODO: use clear_reactions() where possible
-    new_emojis = { r.emoji for r in new_reacts }
-    removed_reacts = create_index(reacts - new_reacts, get('emoji'))
-    for emoji, reacts in removed_reacts.items():
-        # if we're deleting all reacts with a certain emoji AND deleting more
-        # than one, we can use clear_reaction().
-        if emoji not in new_emojis and len(reacts) > 1:
-            aws.append(bot.clear_reaction(chan_id, main_id, emoji))
-        else:
-            aws.extend(bot.remove_reaction(chan_id, main_id, emoji, r.user_id)
-                       for r in reacts)
+    def remove_reacts(reacts):
+        reacts_by_emoji = create_index(reacts, get('emoji'))
+        # use clear_reactions() if we're deleting all reactions. calling it is a
+        # bit risky since we might accidentally remove a new reaction as it
+        # comes in, so we only use if we're removing more than 1 set of reacts.
+        if len(new_reacts) == 0 and len(reacts_by_emoji) > 1:
+            return [bot.clear_reactions(chan_id, main_id)]
+        return chain(*starmap(remove_reacts_by_emoji, reacts_by_emoji.items()))
 
+    new_emojis = { r.emoji for r in new_reacts }
+    def remove_reacts_by_emoji(emoji, reacts):
+        # use_clear reactions() if we're deleting all reacts with a certain emoji
+        # and deleting more than one react.
+        if emoji not in new_emojis and len(reacts) > 1:
+            return [bot.clear_reaction(chan_id, main_id, emoji)]
+        return starmap(remove_react_by_user, reacts)
+
+    def remove_react_by_user(user_id, emoji):
+        return bot.remove_reaction(chan_id, main_id, emoji, user_id)
+
+    aws.extend(remove_reacts(old_reacts - new_reacts))
+
+    # run all the tasks now
     await asyncio.gather(*aws)
     return { key: id_fut.result() for key, id_fut in msg_id_futs.items() }

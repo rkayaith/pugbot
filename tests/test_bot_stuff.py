@@ -27,6 +27,7 @@ def mock_bot(bot):
     mock_bot.add_reaction.return_value = as_fut(None)
     mock_bot.remove_reaction.return_value = as_fut(None)
     mock_bot.clear_reaction.return_value = as_fut(None)
+    mock_bot.clear_reactions.return_value = as_fut(None)
 
     return mock_bot
 
@@ -235,7 +236,7 @@ async def test_update_reacts_noop(mock_bot, chan_id):
     assert mock_bot.clear_reactions.call_count == 0
 
 @pytest.mark.asyncio
-async def test_update_reacts_add(mock_bot, chan_id):
+async def test_update_reacts_add_rem_clr(mock_bot, chan_id):
     bot_id = mock_bot.user_id
 
     prev_msgs = next_msgs = { 'key': 'msg' }
@@ -257,3 +258,48 @@ async def test_update_reacts_add(mock_bot, chan_id):
     assert sorted(mock_bot.remove_reaction.call_args_list) == sorted(exp_rems)
     assert mock_bot.clear_reaction.call_args_list == exp_clrs
     assert mock_bot.clear_reactions.call_count == 0
+
+@pytest.mark.asyncio
+async def test_update_reacts_nuke(mock_bot, chan_id):
+    bot_id = mock_bot.user_id
+
+    prev_msgs = next_msgs = { 'key': 'msg' }
+    msg_id_map = { 'key': 'msg_id' }
+
+    prev_reacts = { React('bob', 'XD'), React('alice', ':)') }
+    next_reacts = set()
+
+    exp_nuke = [call(chan_id, 'msg_id')]
+
+    await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, prev_reacts, next_reacts)
+    assert mock_bot.add_reaction.call_count == 0
+    assert mock_bot.remove_reaction.call_count == 0
+    assert mock_bot.clear_reaction.call_count == 0
+    assert mock_bot.clear_reactions.call_args_list == exp_nuke
+
+@pytest.mark.asyncio
+async def test_update_reacts_dont_nuke(mock_bot, chan_id):
+    bot_id = mock_bot.user_id
+
+    prev_msgs = next_msgs = { 'key': 'msg' }
+    msg_id_map = { 'key': 'msg_id' }
+    next_reacts = set()
+
+    # remove_reaction() should be used instead of clear_reactions()
+    prev_reacts = { React('bob', 'XD') }
+    exp_nuke = [call(chan_id, 'msg_id')]
+    await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, prev_reacts, next_reacts)
+    assert mock_bot.add_reaction.call_count == 0
+    assert mock_bot.remove_reaction.call_count == 1
+    assert mock_bot.clear_reaction.call_count == 0
+    assert mock_bot.clear_reactions.call_count == 0
+
+    # clear_reaction() should be used instead of clear_reactions()
+    prev_reacts = { React('bob', 'XD'), React('alice', 'XD') }
+    await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, prev_reacts, next_reacts)
+    assert mock_bot.add_reaction.call_count == 0
+    assert mock_bot.remove_reaction.call_count == 1
+    assert mock_bot.clear_reaction.call_count == 1
+    assert mock_bot.clear_reactions.call_count == 0
+
+# TODO: tests for when main message changes
