@@ -1,5 +1,14 @@
 import asyncio
 
+fset = frozenset
+
+async def alist(async_gen):
+    # like list() but async
+    return [e async for e in async_gen]
+
+def first(iterable):
+    return next(iter(iterable), None)
+
 def create_index(iterable, index_fn):
     """
     Return an index of 'iterable' using 'index_fn', i.e.

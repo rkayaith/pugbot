@@ -306,7 +306,7 @@ class IdleState(PugState):
         # if anyone is idle, remove them
         afks = { r for r in hosts | capts | players if get_status(bot, r.user) != Status.online }
         if afks:
-            reacts = { *reacts, main: reacts[main] - afks }
+            reacts = { **reacts, main: reacts[main] - afks }
             history = (*state.history, f'Removing afk players: {",",join(mention(bot, id) for _, id in afks)}')
             history = { **state.history, uid(): f'Removing afk players: {",",join(mention(bot, id) for _, id in afks)}' }
             async for state in state.on_update(bot, reacts=reacts, history=history):

@@ -6,7 +6,7 @@ from operator import attrgetter as get
 from discord import Message
 from discord.ext import commands
 
-from utils import as_fut, retval_as_fut, create_index, invert_dict
+from utils import as_fut, create_index, first, invert_dict, retval_as_fut
 
 # TODO: rename file to discord_stuff?
 
@@ -131,8 +131,8 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
 
 
     # we only track reacts for the "main" message
-    main_key     = next(iter(key_to_msg), None)
-    new_main_key = next(iter(key_to_new_msg), None)
+    main_key     = first(key_to_msg)
+    new_main_key = first(key_to_new_msg)
     main_id      = msg_ids.get(main_key)
     main_id_fut  = msg_id_futs.get(new_main_key, as_fut(None))
 
@@ -174,3 +174,7 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
     # run all the tasks now
     await asyncio.gather(*aws)
     return { key: id_fut.result() for key, id_fut in msg_id_futs.items() }
+
+
+def mention(user_id):
+    return f'<@{user_id}>'
