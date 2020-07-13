@@ -1,44 +1,143 @@
 import asyncio
 from collections import defaultdict
-from dataclasses import dataclass, fields, replace
-from functools import cached_property
-from operator import attrgetter as get
-import random
-from typing import Any, Dict, NamedTuple, FrozenSet, Tuple, Union
+from dataclasses import dataclass, field
+import sys
+import traceback
+from typing import Any, Dict, FrozenSet, Union
 
-from discord import Embed, Emoji, Member
+from discord import ChannelType, Object, TextChannel
+from discord.ext import commands
 
-from bot_stuff import Bot, mention
-from utils import create_index, fset
+from bot_stuff import Bot, update_discord
+from states import React, State, StoppedState, IdleState
+from utils import fset
 
-
-class React(NamedTuple):
-    user_id: int
-    emoji: Union[Emoji, str]
-
-
-@dataclass()
+@dataclass
 class ChanCtx:
-    lock: asyncio.Lock
-    msg_id_map: Dict[Any, int]
-    reactions: FrozenSet[React]
+    state: State
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    msg_id_map: Dict[Any, int] = field(default_factory=dict)
+    reacts: FrozenSet[React] = fset()
 
 
-FROZEN=False
-@dataclass(frozen=FROZEN)
-class State:
-    bot: Bot
-    admin_ids: Tuple[int]
-    reacts: FrozenSet[React]
-    history: Tuple[Union[str, Embed]]
+def setup(bot):
+    chan_ctxs = defaultdict(lambda: ChanCtx(StoppedState(
+        bot=bot,
+        admin_ids={bot.owner_id},
+        reacts=fset(),
+        history=tuple()
+    )))
 
-    @classmethod
-    def make(cls, from_state, *args, **kwargs):
-        base_fields = [getattr(from_state, f.name) for f in fields(State)]
-        return cls(*base_fields, *args, **kwargs)
+    @bot.command(aliases=['s'])
+    async def start(ctx, channel: TextChannel = None):
+        """ Starts the bot in a channel """
+        if channel is None:
+            channel = ctx.channel
 
-    async def on_update(self, reacts: FrozenSet[React]):
-        yield replace(self, reacts=reacts)
+        if channel.type != ChannelType.text:
+            await ctx.send("PUGs can only run in text channels.")
+            return
+
+        chan_ctx = chan_ctxs[channel.id]
+        if not isinstance(chan_ctx.state, StoppedState):
+            await ctx.send(f"I'm already running in {channel.mention}.")
+            return
+
+        await update_state(bot, channel.id, chan_ctx, lambda state: IdleState.make(state, admin_ids=state.admin_ids | { ctx.author.id }))
+
+        if channel != ctx.channel:
+            await ctx.send(f"Started in {channel.mention}.")
+
+#   @bot.command()
+#   async def stop(ctx, channel: TextChannel = None):
+#       """ Stops the bot in a channel """
+#       if channel is None:
+#           channel = ctx.channel
+#       channel_name = getattr(channel, 'mention', f"'{channel}'")
+#
+#       if channel.id not in pugs:
+#           await ctx.send(f"I'm not running in {channel_name}.")
+#           return
+#
+#       async with locks[channel.id]:
+#           await pugs[channel.id].msg.edit(content='**Pugbot Stop**')
+#           await pugs[channel.id].msg.clear_reactions()
+#           del pugs[channel.id]
+#           del locks[channel.id]
+#       await ctx.send(f"Stopped in {channel_name}.")
+
+    # @bot.command()
+    # async def randmap(ctx):
+        # """ Picks a random map """
+        # await ctx.send(f"Random map: {rand_map()}")
+
+#   @bot.command(hidden=True)
+#   @commands.is_owner()
+#   async def status(ctx):
+#       """ Print out the bot's state in all channels. """
+#       await ctx.send('**Status**\n' + (
+#           '\n\n'.join(f"`{chan_id}-{state.msg.id}` {state.msg.channel.mention}\n{state}" for chan_id, state in pugs.items())
+#           or 'Not active in any channels.'
+#       ))
+
+    @bot.listen()
+    async def on_ready():
+        # make sure the bot's owner_id value is set by making a call to is_owner()
+        await bot.is_owner(Object(None))
+        print(f"Bot owner is {bot.get_user(bot.owner_id)}")
+
+    @bot.listen()
+    async def on_command_error(ctx, error):
+        if isinstance(error, commands.CommandInvokeError):
+            print(f"Exception occured in '{ctx.command}'", file=sys.stderr)
+            traceback.print_exception(None, error.original, error.original.__traceback__, file=sys.stderr)
+            await ctx.send(f'Something went wrong ({type(error.original).__name__}).')
+            return
+
+        await ctx.send(error)
+
+    """
+    @bot.listen('on_raw_reaction_add')
+    @bot.listen('on_raw_reaction_remove')
+    async def on_raw_reaction(event):
+        # ignore the bot's reactions
+        if event.user_id == bot.user.id:
+            return
+
+        # ignore reactions to channels we aren't watching
+        if event.channel_id not in pugs:
+            return
+
+        # ignore reactions to messages we aren't watching
+        if event.message_id != pugs[event.channel_id].msg.id:
+            return
+
+        # fetch the full message and update state
+        # NOTE: if we used the 'reaction_add' and 'reaction_remove' events we
+        #       wouldn't have to fetch the message, but those events only fire
+        #       for messages in the bot's message cache.
+        channel = bot.get_channel(event.channel_id)
+        msg = await channel.fetch_message(event.message_id)
+        await update_state(msg)
+    """
+
+
+async def update_state(bot, chan_id, ctx, next_state_fn):
+    async with ctx.lock:
+        curr_state = ctx.state
+        next_state = next_state_fn(curr_state)
+        curr_reacts = ctx.reacts
+        next_reacts = next_state.reacts
+
+        # apply changes to discord
+        ctx.msg_id_map = await update_discord(bot, chan_id, ctx.msg_id_map,
+                                              curr_state.messages, next_state.messages,
+                                              curr_reacts, next_reacts)
+
+        # update ctx
+        ctx.state  = next_state
+        ctx.reacts = next_state.reacts
+    return next_state
 
 
 async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
@@ -77,117 +176,4 @@ async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
             ctx.reacts = next_state.reacts
         curr_state = next_state
 
-# TODO: move this somewhere?
-def user_set(reacts):
-    return fset(r.user_id for r in reacts)
 
-MIN_HOSTS = 1
-MIN_CAPTS = 2
-MIN_VOTES = 12
-MAX_PLAYERS = 12
-MIN_PLAYERS = 8
-
-EMPTY = '\u200B'
-SKIP_EMOJI = '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE}'
-# WAIT_EMOJI = '\N{DOUBLE VERTICAL BAR}\uFE0F'
-WAIT_EMOJI = ':pause_button:'
-HOST_EMOJI = '\N{GLOBE WITH MERIDIANS}'
-CAPT_EMOJI = '\N{BILLED CAP}'
-#DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
-
-LAPTOP_MAN = '\N{MAN}\N{ZERO WIDTH JOINER}\N{PERSONAL COMPUTER}'
-
-@dataclass(frozen=True)
-class IdleState(State):
-
-    async def on_update(state, reacts):
-        # add default reacts
-        reacts = reacts | { React(state.bot.user_id, e) for e in (HOST_EMOJI, CAPT_EMOJI) }
-        yield (state := replace(state, reacts=reacts))
-
-        # pug admins can use reacts to wait/skip this state
-        if (state.enough_ppl and not state.admin_wait) or state.admin_skip:
-            # go to voting state
-            state = replace(state, history=state.history + (state.messages,))
-            yield VoteState.make(state, state.host_ids, state.capt_ids, state.player_ids)
-
-    @cached_property
-    def messages(self):
-        # for the player emoji, pick a random one that someone's reacted with,
-        # with a default if there's no player reacts yet
-        choices = { r.emoji for r in self.reacts } - { HOST_EMOJI, CAPT_EMOJI , SKIP_EMOJI, WAIT_EMOJI }
-        player_emoji = random.choice(list(choices) or [LAPTOP_MAN])
-
-        if self.admin_wait:
-            # TODO: use get_member() so we can use display_name instead of name.
-            #       for that we need to get the channel id from somewhere...
-            # TODO: not sure get_user() will even work... might have to call bot._connection.set_user(u._as_minimal_user_json()) somewhere
-            pauser_names = (str(self.bot.get_user(r.user_id).name) for r in self.admin_wait)
-            footer = f"PUG paused by {', '.join(pauser_names)}. Waiting for them to unpause..."
-        elif self.enough_ppl or self.admin_skip:
-            footer = 'PUG starting now...'
-        else:
-            admin_names = (str(self.bot.get_user(user_id).name) for user_id in self.admin_ids)
-            footer = (
-                f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players. "
-                f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
-            )
-        return {
-            'main': (Embed(
-                title='**Waiting for players**',
-                colour=0xf5d442,
-                description=(
-                    f"React with {HOST_EMOJI} if you can host.\n"
-                    f"React with {CAPT_EMOJI} to captain.\n"
-                    f"React with anything else to play.\n"
-                ))
-                .add_field(name=f"{HOST_EMOJI}  {len(self.host_ids)} hosts",
-                           value=f"> {' '.join(map(mention, self.host_ids))}" or EMPTY)
-                .add_field(name=f"{CAPT_EMOJI}  {len(self.capt_ids)} captains",
-                           value=f"> {' '.join(map(mention, self.capt_ids))}" or EMPTY)
-                .add_field(inline=False,
-                           name=f"{player_emoji}  {len(self.player_ids)} players",
-                           value=f"> {' '.join(map(mention, self.player_ids))}" or EMPTY)
-                .set_footer(text=footer)
-            ),
-            **dict(enumerate(self.history))
-        }
-
-    @cached_property
-    def reacts_by_emoji(self):
-        reacts_without_bot = (r for r in self.reacts if r.user_id != self.bot.user_id)
-        return defaultdict(set, create_index(reacts_without_bot, get('emoji')))
-
-    @cached_property
-    def admin_wait(self):
-        return self.reacts & { React(a_id, WAIT_EMOJI) for a_id in self.admin_ids }
-
-    @cached_property
-    def admin_skip(self):
-        return self.reacts & { React(a_id, SKIP_EMOJI) for a_id in self.admin_ids }
-
-    @cached_property
-    def host_ids(self):
-        return user_set(self.reacts_by_emoji[HOST_EMOJI])
-
-    @cached_property
-    def capt_ids(self):
-        return user_set(self.reacts_by_emoji[CAPT_EMOJI])
-
-    @cached_property
-    def player_ids(self):
-        return (user_set(self.reacts - self.reacts_by_emoji[HOST_EMOJI]
-                                     - self.admin_wait - self.admin_skip)
-                                     - { self.bot.user_id })
-    @property
-    def enough_ppl(self):
-        return (len(self.host_ids) >= MIN_HOSTS and
-                len(self.capt_ids) >= MIN_CAPTS and
-                len(self.player_ids) >= MIN_PLAYERS)
-
-
-@dataclass(frozen=FROZEN)
-class VoteState(State):
-    host_ids: FrozenSet[int]
-    capt_ids: FrozenSet[int]
-    player_ids: FrozenSet[int]

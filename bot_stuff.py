@@ -9,12 +9,15 @@ from discord.ext import commands
 from utils import as_fut, create_index, first, invert_dict, retval_as_fut
 
 # TODO: rename file to discord_stuff?
+def setup(bot):
+    bot.__class__ = Bot
 
 class Bot(commands.Bot):
     @property
     def user_id(self):
         return self._connection.self_id
 
+    # def send_message(self, chan_id, content_or_embed=None, /, *, content=None, embed=None):
     def send_message(self, chan_id, content=None, *, embed=None):
         # see: https://github.com/Rapptz/discord.py/blob/master/discord/abc.py#L781
         content = str(content) if content is not None else None

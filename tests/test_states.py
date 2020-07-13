@@ -4,7 +4,7 @@ from itertools import chain
 import random
 import pytest
 
-from rewrite import IdleState, VoteState, React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS
+from states import IdleState, VoteState, React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS
 from utils import alist, fset
 
 def test_idle_props(mock_bot):
