@@ -3,13 +3,15 @@ from collections import defaultdict
 from itertools import chain, starmap
 from operator import attrgetter as get
 
-from discord import Message
+from discord import Embed, Message
 from discord.ext import commands
 
-from utils import as_fut, create_index, first, invert_dict, retval_as_fut
+from .utils import as_fut, create_index, first, invert_dict, retval_as_fut
 
 # TODO: rename file to discord_stuff?
+
 def setup(bot):
+    # update the bot instance with the new definition of Bot
     bot.__class__ = Bot
 
 class Bot(commands.Bot):
@@ -17,20 +19,32 @@ class Bot(commands.Bot):
     def user_id(self):
         return self._connection.self_id
 
-    # def send_message(self, chan_id, content_or_embed=None, /, *, content=None, embed=None):
-    def send_message(self, chan_id, content=None, *, embed=None):
+    def send_message(self, chan_id, content_or_embed=None, /, *, content=None, embed=None):
+        if content_or_embed:
+            assert content is embed is None
+            (embed := content_or_embed) if isinstance(content_or_embed, Embed) else (content := content_or_embed)
+
         # see: https://github.com/Rapptz/discord.py/blob/master/discord/abc.py#L781
         content = str(content) if content is not None else None
         embed   = embed.to_dict() if embed is not None else None
+
+        assert content or embed
         result  = self._connection.http.send_message(chan_id, content, embed=embed)
         async def msg_id():
-            return (await result)['id']
+            return int((await result)['id'])
         return msg_id()
 
-    def edit_message(self, chan_id, msg_id, *, content=None, embed=None):
+    def edit_message(self, chan_id, msg_id, content_or_embed=None, /, *, content=None, embed=None):
+        if content_or_embed:
+            assert content is embed is None
+            (embed := content_or_embed) if isinstance(content_or_embed, Embed) else (content := content_or_embed)
+
         # see: https://github.com/Rapptz/discord.py/blob/master/discord/message.py#L754
         content = str(content) if content is not None else None
         embed   = embed.to_dict() if embed is not None else None
+
+        assert content or embed
+        return self._connection.http.edit_message(chan_id, msg_id, content=content, embed=embed)
 
     def delete_message(self, chan_id, msg_id):
         return self._connection.http.delete_message(chan_id, msg_id)
@@ -86,7 +100,7 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
     def change_msg(key, msg, free_keys):
         if key in free_keys:
             assert msg != key_to_msg[key]
-            aws.append(bot.edit_message(chan_id, msg_ids[key], content=msg))
+            aws.append(bot.edit_message(chan_id, msg_ids[key], msg))
             print(f"{key} -> {key} (change_msg)")
             return key
 
@@ -124,7 +138,7 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
     # create new messages for anything that wasn't mapped to an existing message
     for key in unmapped:
         print(f"None -> {key} (send_msg)")
-        msg_id_futs[key], coro = retval_as_fut(bot.send_message(chan_id, content=key_to_new_msg[key]))
+        msg_id_futs[key], coro = retval_as_fut(bot.send_message(chan_id, key_to_new_msg[key]))
         aws.append(coro)
 
     # delete unused messages
@@ -147,7 +161,8 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
     async def add_react(msg_id_fut, emoji):
         await bot.add_reaction(chan_id, await msg_id_fut, emoji)
     # add reactions to the new main message
-    for user_id, emoji in new_reacts - old_reacts:
+    # sort them so they get added in a consistent order
+    for user_id, emoji in sorted(new_reacts - old_reacts):
         assert user_id == bot.user_id  # we can only add reactions from the bot
         aws.append(add_react(main_id_fut, emoji))
 

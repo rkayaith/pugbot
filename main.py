@@ -4,22 +4,18 @@ import sys
 
 from discord.ext import commands
 
-PRELOADED_MODULES = frozenset(sys.modules.values())
-
 BOT_TOKEN  = os.environ['BOT_TOKEN']
-# MODULES    = ['bot_stuff', 'states', 'utils']
-EXTENSIONS = ['rewrite']
+MODULES    = ['src.states', 'src.utils']  # TODO: use sys.modules to generate this?
+EXTENSIONS = ['src.bot_stuff', 'src.rewrite']
 
+
+# from src import PRELOADED_MODULES
+# print(f"i see {len(PRELOADED_MODULES)} preloaded modules")
 
 if __name__ == '__main__':
-    from bot_stuff import Bot
+    from src.bot_stuff import Bot
     bot = Bot(command_prefix=commands.when_mentioned)
-    bot.load_extension('main')
-    bot.run(BOT_TOKEN)
-    print(f"done with {bot.user}")
 
-
-def setup(bot):
     @bot.listen()
     async def on_ready():
         print(f'We have logged in as {bot.user}')
@@ -28,17 +24,26 @@ def setup(bot):
     @commands.is_owner()
     async def reload(ctx):
         await ctx.send('Reloading.')
-        bot.reload_extension('main')
+        try:
+            bot.reload_extension('main')
+        except commands.ExtensionNotLoaded:
+            bot.load_extension('main')
 
-    print(f"preloaded: {PRELOADED_MODULES}")
-    modules_to_reload = set(sys.modules.values()) - PRELOADED_MODULES
-    for module in modules_to_reload:
-        importlib.reload(module)
-    print('Reloaded modules: ' + ', '.join(m.__name__ for m in modules_to_reload))
+    bot.load_extension('main')
+    bot.run(BOT_TOKEN)
+    print(f"done with {bot.user}")
+
+
+def setup(bot):
+    for mod_name in MODULES:
+        importlib.reload(importlib.import_module(mod_name))
 
     for ext in EXTENSIONS:
         try:
             bot.reload_extension(ext)
         except commands.ExtensionNotLoaded:
             bot.load_extension(ext)
-    print(f"Loaded extensions: {', '.join(EXTENSIONS)}")
+
+    print()
+    print('Reloaded modules:  ' + ', '.join(MODULES))
+    print('Loaded extensions: ' + ', '.join(EXTENSIONS))

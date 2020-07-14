@@ -4,8 +4,8 @@ from itertools import chain
 import random
 import pytest
 
-from states import IdleState, VoteState, React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS
-from utils import alist, fset
+from src.states import IdleState, VoteState, React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS
+from src.utils import alist, fset
 
 def test_idle_props(mock_bot):
     admin_ids = set(range(0, 2))
@@ -64,21 +64,21 @@ async def test_idle_transition(mock_bot):
     initial_state = IdleState(mock_bot, { admin_id }, fset(), tuple())
 
     # we don't go anywhere when noone's reacted yet
-    next_states = await alist(initial_state.on_update(fset()))
+    next_states = await alist(replace(initial_state, reacts=fset()).on_update())
     assert len(next_states) == 1 and isinstance(next_states[-1], IdleState)
     next_states[0].messages
 
     # we go to the voting state when everyone's reacted
-    next_states = await alist(initial_state.on_update(pugger_reacts))
+    next_states = await alist(replace(initial_state, reacts=pugger_reacts).on_update())
     assert len(next_states) == 2 and isinstance(next_states[-1], VoteState)
     next_states[0].messages
 
     # ...unless an admin says to wait
-    next_states = await alist(initial_state.on_update(pugger_reacts | admin_wait))
+    next_states = await alist(replace(initial_state, reacts=pugger_reacts | admin_wait).on_update())
     assert len(next_states) == 1 and isinstance(next_states[-1], IdleState)
     next_states[0].messages
 
     # ...UNLESS an admin says to start
-    next_states = await alist(initial_state.on_update(pugger_reacts | admin_wait | admin_skip))
+    next_states = await alist(replace(initial_state, reacts=pugger_reacts | admin_wait | admin_skip).on_update())
     assert len(next_states) == 2 and isinstance(next_states[-1], VoteState)
     next_states[0].messages

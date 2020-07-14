@@ -1,29 +1,32 @@
 import asyncio
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import sys
 import traceback
 from typing import Any, Dict, FrozenSet, Union
 
-from discord import ChannelType, Object, TextChannel
+from discord import ChannelType, Embed, Object, TextChannel
 from discord.ext import commands
 
-from bot_stuff import Bot, update_discord
-from states import React, State, StoppedState, IdleState
-from utils import fset
+from .bot_stuff import Bot, update_discord
+from .states import React, State, StoppedState, IdleState
+from .utils import fset, first
+
 
 @dataclass
 class ChanCtx:
     state: State
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    # current discord state:
     msg_id_map: Dict[Any, int] = field(default_factory=dict)
+    messages: Dict[Any, Union[str, Embed]] = field(default_factory=dict)
     reacts: FrozenSet[React] = fset()
 
 
 def setup(bot):
     chan_ctxs = defaultdict(lambda: ChanCtx(StoppedState(
         bot=bot,
-        admin_ids={bot.owner_id},
+        admin_ids={ bot.owner_id },
         reacts=fset(),
         history=tuple()
     )))
@@ -43,10 +46,11 @@ def setup(bot):
             await ctx.send(f"I'm already running in {channel.mention}.")
             return
 
-        await update_state(bot, channel.id, chan_ctx, lambda state: IdleState.make(state, admin_ids=state.admin_ids | { ctx.author.id }))
+        await update_state(bot, chan_ctx, channel.id, lambda c: IdleState.make(c.state, admin_ids=c.state.admin_ids | { ctx.author.id }))
 
         if channel != ctx.channel:
             await ctx.send(f"Started in {channel.mention}.")
+        print(f"Started in {channel.mention}.")
 
 #   @bot.command()
 #   async def stop(ctx, channel: TextChannel = None):
@@ -96,7 +100,6 @@ def setup(bot):
 
         await ctx.send(error)
 
-    """
     @bot.listen('on_raw_reaction_add')
     @bot.listen('on_raw_reaction_remove')
     async def on_raw_reaction(event):
@@ -105,75 +108,63 @@ def setup(bot):
             return
 
         # ignore reactions to channels we aren't watching
-        if event.channel_id not in pugs:
+        if event.channel_id not in chan_ctxs:
             return
 
-        # ignore reactions to messages we aren't watching
-        if event.message_id != pugs[event.channel_id].msg.id:
+        react = React(event.user_id, str(event.emoji))
+        if event.event_type == 'REACTION_ADD':
+            update = lambda reacts: reacts | { react }
+        else:
+            update = lambda reacts: reacts - { react }
+
+        await update_reacts(bot, chan_ctxs[event.channel_id],
+                            event.channel_id, event.message_id, update)
+
+
+async def state_sequence(start_state):
+    state_seq = start_state.on_update()
+    while True:
+        async for state in state_seq:
+            yield state
+
+        # call on_update() on the final state and
+        # see if it gives us something different
+        state_seq = state.on_update()
+        if state == (next_state := await state_seq.__anext__()):
+            # it didn't, so stop here
             return
-
-        # fetch the full message and update state
-        # NOTE: if we used the 'reaction_add' and 'reaction_remove' events we
-        #       wouldn't have to fetch the message, but those events only fire
-        #       for messages in the bot's message cache.
-        channel = bot.get_channel(event.channel_id)
-        msg = await channel.fetch_message(event.message_id)
-        await update_state(msg)
-    """
+        yield next_state
 
 
-async def update_state(bot, chan_id, ctx, next_state_fn):
+async def update_state(bot, ctx, chan_id, next_state_fn):
     async with ctx.lock:
-        curr_state = ctx.state
-        next_state = next_state_fn(curr_state)
-        curr_reacts = ctx.reacts
-        next_reacts = next_state.reacts
+        ctx.state = curr_state = next_state_fn(ctx)
 
-        # apply changes to discord
-        ctx.msg_id_map = await update_discord(bot, chan_id, ctx.msg_id_map,
-                                              curr_state.messages, next_state.messages,
-                                              curr_reacts, next_reacts)
+    async for next_state in state_sequence(curr_state):
+        async with ctx.lock:
+            if ctx.state is not curr_state:
+                # someone changed the state while we were getting the next one,
+                # so we can stop here
+                return
 
-        # update ctx
-        ctx.state  = next_state
-        ctx.reacts = next_state.reacts
-    return next_state
+            # NOTE: we use the messages and reacts from 'ctx', NOT 'curr_state'
+            #       since we don't know whether that state was fully applied.
+            ctx.msg_id_map = await update_discord(bot, chan_id, ctx.msg_id_map,
+                                                  ctx.messages, next_state.messages,
+                                                  ctx.reacts, next_state.reacts)
+            ctx.state    = next_state
+            ctx.reacts   = next_state.reacts
+            ctx.messages = next_state.messages
+        curr_state = next_state
+    return curr_state
 
 
-async def update_reacts(bot, ctx, chan_id, msg_id, update_fn):
+async def update_reacts(bot, ctx, chan_id, msg_id, update_reacts_fn):
     async with ctx.lock:
         # we only care about reacts to the main message
         # TODO: track reacts to all messages?
-        if msg_id != first(msg_id_map.values()):
+        if msg_id != first(ctx.msg_id_map.values()):
             return
-        ctx.reacts = (reacts := frozenset(update_fn(ctx.reacts)))
-        curr_state = ctx.state
+        ctx.reacts = frozenset(update_reacts_fn(ctx.reacts))
 
-    async def state_sequence(start_state, reacts):
-        state_seq = start_state.on_update(bot, reacts=reacts)
-        while True:
-            async for state in state_seq:
-                yield state
-
-            # call on_update() on the final state and
-            # see if it gives us something different
-            state_seq = state.on_update(bot, reacts=state.reacts)
-            if state == (next_state := await state_seq.anext()):
-                # it didn't, so stop here
-                return
-            yield next_state
-
-    async for next_state in state_sequence(curr_state, reacts):
-        async with ctx.lock:
-            # someone changed the state while we were getting the next one,
-            # so we can stop here
-            if ctx.state is not curr_state:
-                return
-
-            # apply changes to discord
-            ctx.msg_id_map = await update_discord(bot, ctx, chan_id, curr_state, next_state)
-            ctx.state  = next_state
-            ctx.reacts = next_state.reacts
-        curr_state = next_state
-
-
+    await update_state(bot, ctx, chan_id, lambda ctx: replace(ctx.state, reacts=ctx.reacts))

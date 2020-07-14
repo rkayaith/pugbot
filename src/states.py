@@ -7,8 +7,8 @@ from typing import Tuple, FrozenSet, NamedTuple, Union
 
 from discord import Embed, Emoji
 
-from bot_stuff import Bot, mention
-from utils import create_index, fset
+from .bot_stuff import Bot, mention
+from .utils import create_index, fset
 
 
 class React(NamedTuple):
@@ -30,8 +30,8 @@ class State:
                        for f in fields(State)]
         return cls(*base_fields, *args, **kwargs)
 
-    async def on_update(self, reacts: FrozenSet[React]):
-        yield replace(self, reacts=reacts)
+    async def on_update(self):
+        yield self
 
 
 @dataclass(frozen=FROZEN)
@@ -53,8 +53,7 @@ MIN_PLAYERS = 8
 
 EMPTY = '\u200B'
 SKIP_EMOJI = '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE}'
-# WAIT_EMOJI = '\N{DOUBLE VERTICAL BAR}\uFE0F'
-WAIT_EMOJI = ':pause_button:'
+WAIT_EMOJI = '\N{DOUBLE VERTICAL BAR}\uFE0F'
 HOST_EMOJI = '\N{GLOBE WITH MERIDIANS}'
 CAPT_EMOJI = '\N{BILLED CAP}'
 #DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
@@ -64,15 +63,15 @@ LAPTOP_MAN = '\N{MAN}\N{ZERO WIDTH JOINER}\N{PERSONAL COMPUTER}'
 @dataclass(frozen=True)
 class IdleState(State):
 
-    async def on_update(state, reacts):
+    async def on_update(state):
         # add default reacts
-        reacts = reacts | { React(state.bot.user_id, e) for e in (HOST_EMOJI, CAPT_EMOJI) }
+        reacts = state.reacts | { React(state.bot.user_id, e) for e in (HOST_EMOJI, CAPT_EMOJI) }
         yield (state := replace(state, reacts=reacts))
 
         # pug admins can use reacts to wait/skip this state
         if (state.enough_ppl and not state.admin_wait) or state.admin_skip:
             # go to voting state
-            state = replace(state, history=state.history + (state.messages,))
+            state = replace(state, history=(*state.history, state.messages))
             yield VoteState.make(state, state.host_ids, state.capt_ids, state.player_ids)
 
     @cached_property
@@ -93,7 +92,7 @@ class IdleState(State):
         else:
             admin_names = (str(self.bot.get_user(user_id).name) for user_id in self.admin_ids)
             footer = (
-                f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players. "
+                f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players.\n"
                 f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
             )
         return {
@@ -106,12 +105,12 @@ class IdleState(State):
                     f"React with anything else to play.\n"
                 ))
                 .add_field(name=f"{HOST_EMOJI}  {len(self.host_ids)} hosts",
-                           value=f"> {' '.join(map(mention, self.host_ids))}" or EMPTY)
+                           value=EMPTY + ' '.join(map(mention, self.host_ids)))
                 .add_field(name=f"{CAPT_EMOJI}  {len(self.capt_ids)} captains",
-                           value=f"> {' '.join(map(mention, self.capt_ids))}" or EMPTY)
+                           value=EMPTY + ' '.join(map(mention, self.capt_ids)))
                 .add_field(inline=False,
                            name=f"{player_emoji}  {len(self.player_ids)} players",
-                           value=f"> {' '.join(map(mention, self.player_ids))}" or EMPTY)
+                           value=EMPTY + ' '.join(map(mention, self.player_ids)))
                 .set_footer(text=footer)
             ),
             **dict(enumerate(self.history))
@@ -155,3 +154,7 @@ class VoteState(State):
     host_ids: FrozenSet[int]
     capt_ids: FrozenSet[int]
     player_ids: FrozenSet[int]
+
+    @property
+    def messages(self):
+        return { 'main': 'bruh' }

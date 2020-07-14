@@ -1,8 +1,8 @@
 import pytest
 from unittest.mock import MagicMock, call, create_autospec
 
-from bot_stuff import Bot
-from utils import as_fut
+from src.bot_stuff import Bot
+from src.utils import as_fut
 
 
 @pytest.fixture
