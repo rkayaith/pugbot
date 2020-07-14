@@ -10,9 +10,6 @@ from .utils import as_fut, create_index, first, invert_dict, retval_as_fut
 
 # TODO: rename file to discord_stuff?
 
-def setup(bot):
-    # update the bot instance with the new definition of Bot
-    bot.__class__ = Bot
 
 class Bot(commands.Bot):
     @property

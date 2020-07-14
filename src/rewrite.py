@@ -1,5 +1,4 @@
 import asyncio
-from collections import defaultdict
 from dataclasses import dataclass, field, replace
 import sys
 import traceback
@@ -24,12 +23,35 @@ class ChanCtx:
 
 
 def setup(bot):
-    chan_ctxs = defaultdict(lambda: ChanCtx(StoppedState(
-        bot=bot,
-        admin_ids={ bot.owner_id },
-        reacts=fset(),
-        history=tuple()
-    )))
+    from src.mem import chan_ctxs
+    chan_ctxs.default_factory = lambda: ChanCtx(StoppedState(
+        bot=bot, admin_ids={ bot.owner_id },
+        reacts=fset(), history=tuple()
+    ))
+
+    """
+    This is big hack to support hot reloading code while the bot is running.
+    When this module is reloaded, we try and track down every instance we've
+    created and update its class to the new definition.
+    """
+    bot.__class__ = Bot
+
+    import src.states
+    for chan_id, ctx in list(chan_ctxs.items()):
+        try:
+            # we have to use object.__setattr__ since these are frozen dataclasses
+            object.__setattr__(ctx.state, '__class__',
+                               getattr(src.states, ctx.state.__class__.__name__))
+        except Exception as err:
+            del chan_ctxs[chan_id]
+            print(f"Patching {chan_id} ctx failed, resetting state. Error:\n{err}")
+
+
+    @bot.command()
+    async def reset(ctx):
+        for chan_id in list(chan_ctxs):
+            del chan_ctxs[chan_id]
+
 
     @bot.command(aliases=['s'])
     async def start(ctx, channel: TextChannel = None):
@@ -119,6 +141,8 @@ def setup(bot):
 
         await update_reacts(bot, chan_ctxs[event.channel_id],
                             event.channel_id, event.message_id, update)
+
+
 
 
 async def state_sequence(start_state):

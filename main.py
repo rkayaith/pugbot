@@ -1,12 +1,11 @@
-import importlib
 import os
 import sys
 
 from discord.ext import commands
 
 BOT_TOKEN  = os.environ['BOT_TOKEN']
-MODULES    = ['src.states', 'src.utils']  # TODO: use sys.modules to generate this?
-EXTENSIONS = ['src.bot_stuff', 'src.rewrite']
+MODULES    = ['src.bot_stuff', 'src.states', 'src.utils']  # TODO: use sys.modules to generate this?
+EXTENSIONS = ['src.rewrite']
 
 
 # from src import PRELOADED_MODULES
@@ -35,8 +34,12 @@ if __name__ == '__main__':
 
 
 def setup(bot):
-    for mod_name in MODULES:
-        importlib.reload(importlib.import_module(mod_name))
+    print()
+
+    # invalidate the module cache so that modules will be re-executed when the
+    # extensions are loaded.
+    for path in MODULES:
+        del sys.modules[path]
 
     for ext in EXTENSIONS:
         try:
@@ -44,6 +47,5 @@ def setup(bot):
         except commands.ExtensionNotLoaded:
             bot.load_extension(ext)
 
-    print()
     print('Reloaded modules:  ' + ', '.join(MODULES))
     print('Loaded extensions: ' + ', '.join(EXTENSIONS))
