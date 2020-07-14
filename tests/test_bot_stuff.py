@@ -20,15 +20,17 @@ def test_bot_methods(bot, chan_id):
     emoji = 'emoji'  # TODO: test with 'Emoji' instances as well
 
     # just check that all the bot functions can be called without raising errors
-    bot.send_message(chan_id)
     bot.send_message(chan_id, content)
+    bot.send_message(chan_id, content=content)
+    bot.send_message(chan_id, embed)
     bot.send_message(chan_id, embed=embed)
 
-    bot.edit_message(chan_id, msg_id)
+    bot.edit_message(chan_id, msg_id, content)
     bot.edit_message(chan_id, msg_id, content=content)
+    bot.edit_message(chan_id, msg_id, embed)
     bot.edit_message(chan_id, msg_id, embed=embed)
 
-    bot.edit_message(chan_id, msg_id)
+    bot.delete_message(chan_id, msg_id)
 
     bot.add_reaction(chan_id, msg_id, emoji)
     bot.remove_reaction(chan_id, msg_id, emoji, user_id)

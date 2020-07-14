@@ -90,7 +90,7 @@ class IdleState(State):
         elif self.enough_ppl or self.admin_skip:
             footer = 'PUG starting now...'
         else:
-            admin_names = (str(self.bot.get_user(user_id).name) for user_id in self.admin_ids)
+            admin_names = (str(self.bot.get_user(user_id)) for user_id in self.admin_ids)
             footer = (
                 f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players.\n"
                 f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
