@@ -39,7 +39,7 @@ def setup(bot):
     # invalidate the module cache so that modules will be re-executed when the
     # extensions are loaded.
     for path in MODULES:
-        del sys.modules[path]
+        sys.modules.pop(path, None)
 
     for ext in EXTENSIONS:
         try:

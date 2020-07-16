@@ -26,7 +26,7 @@ def setup(bot):
     from src.mem import chan_ctxs
     chan_ctxs.default_factory = lambda: ChanCtx(StoppedState(
         bot=bot, admin_ids={ bot.owner_id },
-        reacts=fset(), history=tuple()
+        reacts=fset(), history=tuple(),
     ))
 
     """
@@ -52,6 +52,12 @@ def setup(bot):
         for chan_id in list(chan_ctxs):
             del chan_ctxs[chan_id]
 
+    @bot.command()
+    async def poke(ctx):
+        channel = ctx.channel
+        chan_ctx = chan_ctxs[channel.id]
+        await update_state(bot, chan_ctx, channel.id, lambda c: c.state)
+        await ctx.send(f"poked")
 
     @bot.command(aliases=['s'])
     async def start(ctx, channel: TextChannel = None):
