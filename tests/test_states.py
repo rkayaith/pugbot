@@ -4,7 +4,9 @@ from itertools import chain
 import random
 import pytest
 
-from src.states import State, IdleState, VoteState, PickState, React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS, MIN_VOTES
+from src.states import State, IdleState, VoteState, PickState, RunningState, StoppedState
+from src.states import MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS, MIN_VOTES
+from src.states import React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, OPTION_EMOJIS, DONE_EMOJI
 from src.utils import alist, fset
 
 TEST_ADMIN_ID = 1234
@@ -107,7 +109,7 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_s
     if admin_skip:
         reacts |= { React(TEST_ADMIN_ID, SKIP_EMOJI) }
     best_host = best_capt = 0
-    reacts |= { React(u, init_state.host_emojis[best_host]) for u in user_ids[:n_host_votes]) }
+    reacts |= { React(u, init_state.host_emojis[best_host]) for u in range(n_host_votes) }
     reacts |= { React(u, init_state.capt_emojis[best_capt]) for u in range(n_capt_votes) }
     reacts |= { React(u, 'other') for u in range(20) }
 
@@ -115,15 +117,54 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_s
     assert isinstance(next_states[-1], expected_state)
     assert [s.messages for s in next_states]
 
-    # make sure bot is adding the correct reacts
-    expected_bot_reacts = set()
-    if n_hosts > 1:
-        expected_bot_reacts |= { (init_state.bot.user_id, e) for e in init_state.host_emojis }
-    if n_capts > 2:
-        expected_bot_reacts |= { (init_state.bot.user_id, e) for e in init_state.capt_emojis }
-    assert next_states[-1].reacts >= expected_bot_reacts
-
-    # make sure PickState only has the "best people"
     if expected_state is PickState:
+        # make sure PickState only has the "best people"
         assert next_states[-1].host_id == best_host
         assert next_states[-1].capt_ids[1] == best_capt
+    else:
+        # make sure bot is adding the correct reacts
+        expected_bot_reacts = set()
+        if n_hosts > 1:
+            expected_bot_reacts |= { (init_state.bot.user_id, e) for e in init_state.host_emojis }
+        if n_capts > 2:
+            expected_bot_reacts |= { (init_state.bot.user_id, e) for e in init_state.capt_emojis }
+        assert next_states[-1].reacts >= expected_bot_reacts
+
+
+@pytest.mark.asyncio
+async def test_pick_update(base_state):
+    host_id = 10
+    capt_ids = (3, 9)
+    player_ids = tuple(range(1000, 1007))
+    init_state = PickState.make(base_state, host_id, capt_ids, player_ids)
+
+    async def pick(state, capt, pick_idx):
+        return (await alist(replace(state, reacts=state.reacts | { React(capt, OPTION_EMOJIS[pick_idx]) }).on_update()))[-1]
+
+    state = init_state
+    for capt_idx, pick_idx in [(0, 0), (1, 3), (1, 4), (0, 1), (0, 2), (1, 5)]:
+        state = await pick(state, capt_ids[capt_idx], pick_idx)
+        assert state.team_ids[capt_idx][-1] == player_ids[pick_idx]
+        state.messages
+
+    state = (await alist(state.on_update()))[-1]
+    assert isinstance(state, RunningState)
+    assert state.red_ids == (capt_ids[0], player_ids[0], player_ids[1], player_ids[2])
+    assert state.blu_ids == (capt_ids[1], player_ids[3], player_ids[4], player_ids[5])
+
+
+@pytest.mark.parametrize('expected_state, reacts', [
+    (RunningState, { React(1000, DONE_EMOJI) }),
+    (StoppedState, { React(1000, DONE_EMOJI), React(1001, DONE_EMOJI) }),
+    (StoppedState, { React(TEST_ADMIN_ID, DONE_EMOJI) }),
+])
+@pytest.mark.asyncio
+async def test_running_update(base_state, expected_state, reacts):
+    host_id = 10
+    red_ids = tuple(range(1000, 1000+6))
+    blu_ids = tuple(range(2000, 2000+6))
+    init_state = RunningState.make(base_state, host_id, red_ids, blu_ids)
+
+    next_states = await alist(replace(init_state, reacts=reacts).on_update())
+    assert isinstance(next_states[-1], expected_state)
+    [state.messages for state in next_states]

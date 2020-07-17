@@ -28,7 +28,6 @@ def setup(bot):
         bot=bot, admin_ids={ bot.owner_id },
         reacts=fset(), history=tuple(),
     ))
-
     """
     This is big hack to support hot reloading code while the bot is running.
     When this module is reloaded, we try and track down every instance we've
@@ -80,23 +79,20 @@ def setup(bot):
             await ctx.send(f"Started in {channel.mention}.")
         print(f"Started in {channel.mention}.")
 
-#   @bot.command()
-#   async def stop(ctx, channel: TextChannel = None):
-#       """ Stops the bot in a channel """
-#       if channel is None:
-#           channel = ctx.channel
-#       channel_name = getattr(channel, 'mention', f"'{channel}'")
-#
-#       if channel.id not in pugs:
-#           await ctx.send(f"I'm not running in {channel_name}.")
-#           return
-#
-#       async with locks[channel.id]:
-#           await pugs[channel.id].msg.edit(content='**Pugbot Stop**')
-#           await pugs[channel.id].msg.clear_reactions()
-#           del pugs[channel.id]
-#           del locks[channel.id]
-#       await ctx.send(f"Stopped in {channel_name}.")
+    @bot.command()
+    async def stop(ctx, channel: TextChannel = None):
+        """ Stops the bot in a channel """
+        if channel is None:
+            channel = ctx.channel
+        channel_name = getattr(channel, 'mention', f"'{channel}'")
+
+        chan_ctx = chan_ctxs[channel.id]
+        if isinstance(chan_ctx.state, StoppedState):
+            await ctx.send(f"I'm not running in {channel_name}.")
+            return
+
+        await update_state(bot, chan_ctx, channel.id, lambda c: StoppedState.make(c.state))
+        await ctx.send(f"Stopped in {channel_name}.")
 
     # @bot.command()
     # async def randmap(ctx):
@@ -132,7 +128,8 @@ def setup(bot):
     @bot.listen('on_raw_reaction_remove')
     async def on_raw_reaction(event):
         # ignore the bot's reactions
-        if event.user_id == bot.user.id:
+        if event.user_id == bot.user_id:
+            print("ignored bot")
             return
 
         # ignore reactions to channels we aren't watching
@@ -150,7 +147,6 @@ def setup(bot):
 
 
 
-
 async def state_sequence(start_state):
     state_seq = start_state.on_update()
     while True:
@@ -163,11 +159,13 @@ async def state_sequence(start_state):
         if state == (next_state := await state_seq.__anext__()):
             # it didn't, so stop here
             return
-        yield next_state
+        yield (state := next_state)
 
 
 async def update_state(bot, ctx, chan_id, next_state_fn):
     async with ctx.lock:
+        # TODO: don't do this. it's better if ctx.state.messages and
+        #       ctx.msg_id_map stay in sync
         ctx.state = curr_state = next_state_fn(ctx)
 
     async for next_state in state_sequence(curr_state):

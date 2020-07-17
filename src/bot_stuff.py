@@ -156,11 +156,15 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
         old_reacts = set()
 
     async def add_react(msg_id_fut, emoji):
-        await bot.add_reaction(chan_id, await msg_id_fut, emoji)
+        assert (msg_id := await msg_id_fut) is not None
+        await bot.add_reaction(chan_id, msg_id, emoji)
     # add reactions to the new main message
     # sort them so they get added in a consistent order
     for user_id, emoji in sorted(new_reacts - old_reacts):
-        assert user_id == bot.user_id  # we can only add reactions from the bot
+        try:
+            assert user_id == bot.user_id  # we can only add reactions from the bot
+        except:
+            breakpoint()
         aws.append(add_react(main_id_fut, emoji))
 
     # remove reactions from old main message
@@ -188,7 +192,11 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
 
     # run all the tasks now
     await asyncio.gather(*aws)
-    return { key: id_fut.result() for key, id_fut in msg_id_futs.items() }
+
+    # all the message id futures should be finished now.
+    # we make sure the keys here have the same order as 'key_to_new_msg', so
+    # that the main message is first.
+    return { key: msg_id_futs[key].result() for key in key_to_new_msg }
 
 
 def mention(user_id):

@@ -47,8 +47,8 @@ async def test_update_msgs_noop(mock_bot, chan_id):
     msg_id_map = { 'cat': 0, 'dog': 1 }
     exp_id_map   = msg_id_map
 
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
@@ -56,12 +56,13 @@ async def test_update_msgs_noop(mock_bot, chan_id):
 @pytest.mark.asyncio
 async def test_update_msgs_swap_key(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
-    next_msgs  = { 'cat': 'dog_msg', 'dog': 'cat_msg' }
+    next_msgs  = { 'dog': 'cat_msg', 'cat': 'dog_msg' }
     msg_id_map = { 'cat': 0, 'dog': 1 }
 
-    exp_id_map = { 'cat': 1, 'dog': 0 }
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    exp_id_map = { 'dog': 0, 'cat': 1 }
+
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
@@ -69,14 +70,14 @@ async def test_update_msgs_swap_key(mock_bot, chan_id):
 @pytest.mark.asyncio
 async def test_update_msgs_edit(mock_bot, chan_id):
     prev_msgs  = { 'cat': 'cat_msg', 'dog': 'dog_msg' }
-    next_msgs  = { 'cat': 'cat_msg', 'dog': 'a_different_dog_msg' }
+    next_msgs  = { 'cat': 'a_different_cat_msg', 'dog': 'dog_msg' }
     msg_id_map = { 'cat': 0, 'dog': 1 }
 
     exp_id_map = msg_id_map
-    exp_edits  = [call(chan_id, exp_id_map['dog'], next_msgs['dog'])]
+    exp_edits  = [call(chan_id, exp_id_map['cat'], next_msgs['cat'])]
 
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
@@ -90,8 +91,8 @@ async def test_update_msgs_edit_duplicate(mock_bot, chan_id):
     exp_id_map = msg_id_map
     exp_edits  = [call(chan_id, exp_id_map['dog_then_cat'], next_msgs['dog_then_cat'])]
 
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_count == 0
@@ -106,8 +107,8 @@ async def test_update_msgs_send(mock_bot, chan_id):
 
     exp_id_map = { 'cat': 0, 'dog': 'new_msg_id' }
     exp_sends  = [call(chan_id, next_msgs['dog'])]
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
@@ -121,8 +122,8 @@ async def test_update_msgs_send_duplicate(mock_bot, chan_id):
 
     exp_id_map = { 'cat': 0, 'another_cat': 'new_msg_id' }
     exp_sends  = [call(chan_id, next_msgs['another_cat'])]
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
@@ -135,8 +136,8 @@ async def test_update_msgs_delete(mock_bot, chan_id):
 
     exp_id_map = { 'cat': 0 }
     exp_dels   = [call(chan_id, msg_id_map['dog'])]
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_args_list == exp_dels
@@ -150,8 +151,8 @@ async def test_update_msgs_append_hist(mock_bot, chan_id):
 
     exp_id_map = { 'hist0': 0, 'hist1': 1, 'newest': 'new_msg_id' }
     exp_sends  = [call(chan_id, next_msgs['newest'])]
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_count == 0
     assert mock_bot.send_message.call_args_list == exp_sends
     assert mock_bot.delete_message.call_count == 0
@@ -173,8 +174,8 @@ async def test_update_msgs_remap_optimal(mock_bot, chan_id):
     exp_edits  = [call(chan_id, exp_id_map['curr'], next_msgs['curr'])]
     exp_dels   = [call(chan_id, msg_id_map['prev'])]
 
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_args_list == exp_dels
@@ -196,8 +197,8 @@ async def test_update_msgs_remap_optimal(mock_bot, chan_id):
     exp_edits  = [call(chan_id, exp_id_map['curr'], next_msgs['curr'])]
     exp_dels   = [call(chan_id, msg_id_map['prev'])]
 
-    assert exp_id_map == await update_discord(mock_bot, chan_id, msg_id_map,
-                                              prev_msgs, next_msgs, set(), set())
+    msg_id_map = await update_discord(mock_bot, chan_id, msg_id_map, prev_msgs, next_msgs, set(), set())
+    assert list(exp_id_map.items()) == list(msg_id_map.items())
     assert mock_bot.edit_message.call_args_list == exp_edits
     assert mock_bot.send_message.call_count == 0
     assert mock_bot.delete_message.call_args_list == exp_dels

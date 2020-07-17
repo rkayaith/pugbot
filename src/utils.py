@@ -1,4 +1,5 @@
 import asyncio
+from itertools import repeat
 
 fset = frozenset
 
@@ -41,3 +42,17 @@ def retval_as_fut(coro):
     async def wrapped_coro():
         fut.set_result(await coro)
     return fut, wrapped_coro()
+
+def user_set(reacts):
+    return fset(r.user_id for r in reacts)
+
+def rs(user_ids, emojis):
+    if isinstance(user_ids, int):
+        user_ids = repeat(user_ids)
+    if isinstance(user_ids, str):
+        emojis = repeat(emojis)
+    return fset(map(React, user_ids, emojis))
+
+
+
+
