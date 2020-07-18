@@ -70,7 +70,7 @@ class IdleState(State):
         # TODO: remove admin skipping?
         if (state.enough_ppl and not state.admin_wait) or state.admin_skip:
             # go to voting state
-            state = replace(state, history=(*state.history, state.messages['main']))
+            state = replace(state, history=(*state.history, state.messages['idle']))
             yield VoteState.make(state, state.host_ids, state.capt_ids, state.player_ids)
     @cached_property
     def messages(state):
@@ -93,7 +93,7 @@ class IdleState(State):
                 f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
             )
         return {
-            'main': (Embed(
+            'idle': (Embed(
                 title='**Waiting for players**',
                 colour=0xf5d442,
                 description=(
@@ -182,7 +182,7 @@ class VoteState(State):
                                             in zip(state.capt_emojis, state.capt_ids)))
 
         return {
-            'main': embed,
+            'vote': embed,
             **dict(enumerate(state.history))
         }
 
