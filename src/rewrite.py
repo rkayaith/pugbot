@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass, field, replace
+import random
 import sys
 import traceback
 from typing import Any, Dict, FrozenSet, Union
@@ -11,6 +12,12 @@ from .bot_stuff import Bot, update_discord
 from .states import React, State, StoppedState, IdleState
 from .utils import fset, first, anext
 
+MAP_LIST = [
+    ('ctf_conflict', 1), ('koth_harvest', 1), ('koth_contra', 1),
+    ('dkoth_kots', 0.5), ('ctf_conflict2', 0.5), ('ctf_rsm', 0.5), ('cp_mountainjazz', 0.5), ('koth_odvuschwa', 0.5),
+    ('koth_corinth', 0.1), ('cp_kistra', 0.1), ('ctf_eiger', 0.1),
+    ('koth_viaduct', 0.1), ('koth_valley', 0.1), ('arena_harvest', 0.1),
+]
 
 @dataclass
 class ChanCtx:
@@ -95,10 +102,20 @@ def setup(bot):
         await update_state(bot, chan_ctx, channel.id, lambda c: StoppedState.make(c.state))
         await ctx.send(f"Stopped in {channel_name}.")
 
-    # @bot.command()
-    # async def randmap(ctx):
-        # """ Picks a random map """
-        # await ctx.send(f"Random map: {rand_map()}")
+
+    last_map = rand_map()
+
+    @bot.command()
+    async def randmap(ctx):
+        """ Picks a random map """
+        nonlocal last_map
+        map_name = rand_map()
+        colour = random.Random(hash(map_name)).randint(0, 0xffffff)
+        embed = Embed(title=f"Fuck {last_map.split('_', 1)[-1].capitalize()} All My Homies Play",
+                      description=map_name,
+                      colour=colour)
+        last_map = map_name
+        await ctx.send(embed=embed)
 
 #   @bot.command(hidden=True)
 #   @commands.is_owner()
@@ -147,6 +164,10 @@ def setup(bot):
                             event.channel_id, event.message_id, update)
 
 
+def rand_map():
+    map_names, weights = zip(*MAP_LIST)
+    [map_name] = random.choices(map_names, weights=weights, k=1)
+    return map_name
 
 async def state_sequence(start_state):
     state_seq = start_state.on_update()
