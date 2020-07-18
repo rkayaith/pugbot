@@ -50,6 +50,7 @@ def setup(bot):
             object.__setattr__(ctx.state, '__class__',
                                getattr(src.states, ctx.state.__class__.__name__))
         except Exception as err:
+            ctx.state = None
             del chan_ctxs[chan_id]
             print(f"Patching {chan_id} ctx failed, resetting state. Error:\n{err}")
 

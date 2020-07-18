@@ -46,7 +46,7 @@ class DanceState(State):
                 title=title,
                 description=description,
                 colour = random.randint(0, 0xffffff)
-            )
+            ).set_footer(text='React to this message to stop the dance.')
         }
 
     async def on_update(state):
@@ -59,6 +59,8 @@ class DanceState(State):
         while True:
             await asyncio.sleep(1)
             next_idx = (state.dance_idx + 1) % len(DANCE)
+            if next_idx == 0:
+                await asyncio.sleep(1)
             yield (state := replace(state, dance_idx=next_idx))
 DANCE = [
     """
