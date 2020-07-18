@@ -38,8 +38,9 @@ class DanceState(State):
     def messages(state):
         title = ' '.join(str(state.bot.get_user(u)) for u in state.users)
         mentions = ' '.join(map(mention, state.users))
-        description=(('\n' + mentions + EMPTY.join([' ']*5))
-                     .join(DANCE[state.dance_idx].split('\n')))
+        description = (('\n' + mentions + EMPTY.join([' ']*5))
+                       .join(DANCE[state.dance_idx].split('\n')))
+        description = description[:2048]  # embed description has a character limit
         return {
             'main': Embed(
                 title=title,
