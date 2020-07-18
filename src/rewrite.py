@@ -54,12 +54,14 @@ def setup(bot):
             print(f"Patching {chan_id} ctx failed, resetting state. Error:\n{err}")
 
 
-    @bot.command()
+    @commands.is_owner()
+    @bot.command(hidden=True)
     async def reset(ctx):
         for chan_id in list(chan_ctxs):
             del chan_ctxs[chan_id]
 
-    @bot.command()
+    @commands.is_owner()
+    @bot.command(hidden=True)
     async def poke(ctx):
         channel = ctx.channel
         chan_ctx = chan_ctxs[channel.id]
