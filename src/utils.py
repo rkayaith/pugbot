@@ -7,6 +7,13 @@ async def alist(async_gen):
     # like list() but async
     return [e async for e in async_gen]
 
+async def anext(async_iterator, default):
+    # like next() but async
+    try:
+        return await async_iterator.__anext__()
+    except StopAsyncIteration:
+        return default
+
 def first(iterable):
     return next(iter(iterable), None)
 

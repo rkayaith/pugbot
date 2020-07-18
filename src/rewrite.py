@@ -9,7 +9,7 @@ from discord.ext import commands
 
 from .bot_stuff import Bot, update_discord
 from .states import React, State, StoppedState, IdleState
-from .utils import fset, first
+from .utils import fset, first, anext
 
 
 @dataclass
@@ -24,10 +24,20 @@ class ChanCtx:
 
 def setup(bot):
     from src.mem import chan_ctxs
+    """
     chan_ctxs.default_factory = lambda: ChanCtx(StoppedState(
         bot=bot, admin_ids={ bot.owner_id },
         reacts=fset(), history=tuple(),
     ))
+    """
+    from src.states import PickState
+    chan_ctxs.default_factory = lambda: ChanCtx(PickState(
+        bot=bot, admin_ids={ bot.owner_id },
+        reacts=fset(), history=tuple(),
+        host_id=1, capt_ids=(145952993722761217, 145952993722761217),
+        player_ids=fset(range(100000000, 100000020))
+    ))
+
     """
     This is big hack to support hot reloading code while the bot is running.
     When this module is reloaded, we try and track down every instance we've
@@ -163,12 +173,16 @@ async def state_sequence(start_state):
 
 
 async def update_state(bot, ctx, chan_id, next_state_fn):
+    # TODO: this whole function is kinda wack, should probably rethink this at
+    #       some point
+
     async with ctx.lock:
         # TODO: don't do this. it's better if ctx.state.messages and
         #       ctx.msg_id_map stay in sync
         ctx.state = curr_state = next_state_fn(ctx)
 
-    async for next_state in state_sequence(curr_state):
+    state_seq = state_sequence(curr_state)
+    while (next_state := await anext(state_seq, None)) is not None:
         async with ctx.lock:
             if ctx.state is not curr_state:
                 # someone changed the state while we were getting the next one,
@@ -177,12 +191,20 @@ async def update_state(bot, ctx, chan_id, next_state_fn):
 
             # NOTE: we use the messages and reacts from 'ctx', NOT 'curr_state'
             #       since we don't know whether that state was fully applied.
-            ctx.msg_id_map = await update_discord(bot, chan_id, ctx.msg_id_map,
+            next_msg_id_map = await update_discord(bot, chan_id, ctx.msg_id_map,
                                                   ctx.messages, next_state.messages,
                                                   ctx.reacts, next_state.reacts)
-            ctx.state    = next_state
-            ctx.reacts   = next_state.reacts
             ctx.messages = next_state.messages
+            ctx.state    = next_state
+            if first(ctx.msg_id_map.values()) == first(next_msg_id_map.values()):
+                ctx.reacts = next_state.reacts
+            else:
+                # the main message changed, which means we should remove the old
+                # reacts. we also remake the state sequence with the updated reacts.
+                ctx.reacts = next_state.reacts - ctx.reacts
+                state_seq = state_sequence(replace(next_state, reacts=ctx.reacts))
+                print("restarting seq")
+            ctx.msg_id_map = next_msg_id_map
         curr_state = next_state
     return curr_state
 

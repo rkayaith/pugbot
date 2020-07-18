@@ -150,24 +150,17 @@ async def update_discord(bot, chan_id, msg_ids, key_to_msg, key_to_new_msg, old_
     main_id      = msg_ids.get(main_key)
     main_id_fut  = msg_id_futs.get(new_main_key, as_fut(None))
 
-    # if we're tracking a different message now, we assume it has no reacts
-    # TODO: should we remove all the reacts from the old message?
-    if not main_id_fut.done() or main_id_fut.result() != main_id:
-        old_reacts = set()
-
+    # add new reactions to the new main message.
+    # sort them so they get added in a consistent order.
     async def add_react(msg_id_fut, emoji):
         assert (msg_id := await msg_id_fut) is not None
         await bot.add_reaction(chan_id, msg_id, emoji)
-    # add reactions to the new main message
-    # sort them so they get added in a consistent order
+
     for user_id, emoji in sorted(new_reacts - old_reacts):
-        try:
-            assert user_id == bot.user_id  # we can only add reactions from the bot
-        except:
-            breakpoint()
+        assert user_id == bot.user_id  # we can only add reactions from the bot
         aws.append(add_react(main_id_fut, emoji))
 
-    # remove reactions from old main message
+    # remove reactions from the old main message
     def remove_reacts(reacts):
         reacts_by_emoji = create_index(reacts, get('emoji'))
         # use clear_reactions() if we're deleting all reactions. calling it is a

@@ -37,10 +37,6 @@ class State:
 
 @dataclass(frozen=FROZEN)
 class StoppedState(State):
-    @classmethod
-    def make(cls, from_state, *args, **kwargs):
-        return super().make(from_state, *args, **kwargs, reacts=fset())
-
     @property
     def messages(state):
         return { 'stop': 'the bot has stopped', **dict(enumerate(state.history)) }
@@ -65,10 +61,6 @@ DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
 
 @dataclass(frozen=True)
 class IdleState(State):
-    @classmethod
-    def make(cls, from_state, reacts=fset(), **kwargs):
-        return super().make(from_state, reacts=reacts, **kwargs)
-
     async def on_update(state):
         # add default reacts
         bot_reacts = { React(state.bot.user_id, e) for e in (HOST_EMOJI, CAPT_EMOJI) }
@@ -164,7 +156,7 @@ class VoteState(State):
     @classmethod
     def make(cls, from_state, host_ids, capt_ids, player_ids):
         assert len(host_ids) >= 1 and len(capt_ids) >= 2
-        state = super().make(from_state, tuple(host_ids), tuple(capt_ids), fset(player_ids), reacts=fset())
+        state = super().make(from_state, tuple(host_ids), tuple(capt_ids), fset(player_ids))
         # skip voting if there's nothing to vote on
         if not state.host_voting and not state.capt_voting:
             [host_id] = host_ids
@@ -265,7 +257,7 @@ class PickState(State):
     @classmethod
     def make(cls, from_state, host_id, capt_ids, player_ids):
         assert len(capt_ids) == 2
-        return super().make(from_state, host_id, tuple(capt_ids), fset(player_ids), reacts=fset())
+        return super().make(from_state, host_id, tuple(capt_ids), fset(player_ids))
 
     @property
     def red_ids(state):
@@ -387,10 +379,6 @@ class RunningState(State):
     host_id: int
     red_ids: Tuple[int, ...]
     blu_ids: Tuple[int, ...]
-
-    @classmethod
-    def make(cls, from_state, host_id, red_ids, blu_ids):
-        return super().make(from_state, host_id, red_ids, blu_ids, reacts=fset())
 
     @cached_property
     def messages(state):

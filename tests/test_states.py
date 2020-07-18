@@ -155,8 +155,8 @@ async def test_pick_update(base_state):
 
 @pytest.mark.parametrize('expected_state, reacts', [
     (RunningState, { React(1000, DONE_EMOJI) }),
-    (StoppedState, { React(1000, DONE_EMOJI), React(1001, DONE_EMOJI) }),
-    (StoppedState, { React(TEST_ADMIN_ID, DONE_EMOJI) }),
+    (IdleState, { React(1000, DONE_EMOJI), React(1001, DONE_EMOJI) }),
+    (IdleState, { React(TEST_ADMIN_ID, DONE_EMOJI) }),
 ])
 @pytest.mark.asyncio
 async def test_running_update(base_state, expected_state, reacts):
