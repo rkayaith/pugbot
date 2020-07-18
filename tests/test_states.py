@@ -108,7 +108,8 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_s
     reacts = set()
     if admin_skip:
         reacts |= { React(TEST_ADMIN_ID, SKIP_EMOJI) }
-    best_host = best_capt = 0
+    best_host = 0
+    best_capt = 1
     reacts |= { React(u, init_state.host_emojis[best_host]) for u in range(n_host_votes) }
     reacts |= { React(u, init_state.capt_emojis[best_capt]) for u in range(n_capt_votes) }
     reacts |= { React(u, 'other') for u in range(20) }
@@ -119,8 +120,10 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_s
 
     if expected_state is PickState:
         # make sure PickState only has the "best people"
-        assert next_states[-1].host_id == best_host
-        assert next_states[-1].capt_ids[1] == best_capt
+        if n_host_votes > 0:
+            assert next_states[-1].host_id == best_host
+        if n_capt_votes > 0:
+            assert next_states[-1].capt_ids[1] == best_capt
     else:
         # make sure bot is adding the correct reacts
         expected_bot_reacts = set()

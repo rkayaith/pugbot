@@ -55,7 +55,7 @@ HOST_EMOJI   = '\N{GLOBE WITH MERIDIANS}'
 CAPT_EMOJI   = '\N{BILLED CAP}'
 PLAYER_EMOJI = '\N{MAN}\N{ZERO WIDTH JOINER}\N{PERSONAL COMPUTER}'
 
-FLAG_EMOJIS   = ['\U0001F3F3\U0000FE0F\U0000200D\U0001F308', '\U0001F3F4\U0000200D\U00002620\U0000FE0F'] + list(map(flag, ['in', 'cn', 'br', 'ae', 'kp', 'im']))
+FLAG_EMOJIS   = ['\U0001F3F3\U0000FE0F\U0000200D\U0001F308', '\U0001F3F4\U0000200D\U00002620\U0000FE0F'] + list(map(flag, ['in', 'cn', 'br', 'ae', 'kp', 'im', 'eu', 'il', 'mk', 'mx', 'jp']))
 OPTION_EMOJIS = [f'{i}\N{COMBINING ENCLOSING KEYCAP}' for i in range(10)] + [chr(i) for i in range(ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}'), ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}') + 26)]
 DONE_EMOJI = '\N{WHITE HEAVY CHECK MARK}'
 
@@ -72,6 +72,7 @@ class IdleState(State):
             # go to voting state
             state = replace(state, history=(*state.history, state.messages['idle']))
             yield VoteState.make(state, state.host_ids, state.capt_ids, state.player_ids)
+
     @cached_property
     def messages(state):
         # for the player emoji, pick a random one that someone's reacted with,
@@ -87,6 +88,7 @@ class IdleState(State):
         elif state.enough_ppl or state.admin_skip:
             footer = 'PUG starting now...'
         else:
+            # TODO: add info about using SKIP_EMOJI
             admin_names = (str(state.bot.get_user(user_id)) for user_id in state.admin_ids)
             footer = (
                 f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players.\n"
@@ -96,7 +98,7 @@ class IdleState(State):
         return {
             'idle': (Embed(
                 title='**Waiting for players**',
-                colour=0xf5d442,
+                colour=0xffac33,
                 description=(
                     f"React with {HOST_EMOJI} if you can host.\n"
                     f"React with {CAPT_EMOJI} to captain.\n"
@@ -156,6 +158,13 @@ class VoteState(State):
 
     @classmethod
     def make(cls, from_state, host_ids, capt_ids, player_ids):
+        # if there aren't enough hosts or captains, add all the players and let
+        # the people vote
+        if len(host_ids) < 1:
+            host_ids = set(host_ids) | set(player_ids)
+        if len(capt_ids) < 2:
+            capt_ids = set(capt_ids) | set(player_ids)
+
         assert len(host_ids) >= 1 and len(capt_ids) >= 2
         state = super().make(from_state, tuple(host_ids), tuple(capt_ids), fset(player_ids))
         # skip voting if there's nothing to vote on
@@ -169,7 +178,7 @@ class VoteState(State):
         admin_names = (str(state.bot.get_user(u)) for u in state.admin_ids)
         embed = (Embed(
             title='**PUG voting**',
-            colour=0xf5d442,
+            colour=0xaa8ed6,
             description='React to vote for a host/captains')
             .set_footer(text=f"{' and '.join(admin_names)} can end this early by reacting with {SKIP_EMOJI}"))
 
@@ -198,10 +207,9 @@ class VoteState(State):
         for emojis, voting in [(state.host_emojis, state.host_voting),
                                (state.capt_emojis, state.capt_voting)]:
             bot_reacts = { React(state.bot.user_id, e) for e in emojis }
-            if voting and not bot_reacts <= state.reacts:
+            if voting and not bot_reacts <= state.reacts and len(bot_reacts) < 10:
                 yield (state := replace(state, reacts=state.reacts | bot_reacts))
 
-        # TODO: TEST: remove bot's reacts before counting
         def count_votes(emojis, ids):
             emoji_to_id = dict(zip(emojis, ids))
             votes = Counter({ i: 0 for i in ids })
@@ -242,7 +250,7 @@ class VoteState(State):
 
 
 PICKED_EMOJI = '\N{NO ENTRY SIGN}'
-PICKED_EMOJI = ':black_small_square:'
+PICKED_EMOJI = '\N{BLACK SMALL SQUARE}'
 PICK_ORDER = [0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0]
 RED_EMOJI = '\N{LARGE RED SQUARE}'
 BLU_EMOJI = '\N{LARGE BLUE SQUARE}'
