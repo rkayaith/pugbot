@@ -24,18 +24,9 @@ class ChanCtx:
 
 def setup(bot):
     from src.mem import chan_ctxs
-    """
     chan_ctxs.default_factory = lambda: ChanCtx(StoppedState(
         bot=bot, admin_ids={ bot.owner_id },
         reacts=fset(), history=tuple(),
-    ))
-    """
-    from src.states import PickState
-    chan_ctxs.default_factory = lambda: ChanCtx(PickState(
-        bot=bot, admin_ids={ bot.owner_id },
-        reacts=fset(), history=tuple(),
-        host_id=1, capt_ids=(145952993722761217, 145952993722761217),
-        player_ids=fset(range(100000000, 100000020))
     ))
 
     """
