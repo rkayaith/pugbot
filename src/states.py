@@ -39,7 +39,7 @@ class State:
 class StoppedState(State):
     @property
     def messages(state):
-        return { 'stop': 'the bot has stopped', **dict(enumerate(state.history)) }
+        return { **dict(enumerate(state.history)) }
 
 
 MIN_HOSTS = 1
@@ -311,20 +311,16 @@ class PickState(State):
                 ))
                 .add_field(name=f"{HOST_EMOJI} Host {HOST_EMOJI}",
                            value=mention(state.host_id),
-                           inline=True)
+                           inline=False)
                 .add_field(name=f"{CAPT_EMOJI} Captains {CAPT_EMOJI}",
                            value=' '.join(map(mention, state.capt_ids)),
                            inline=False)
-                #.add_field(name=EMPTY, value=EMPTY, inline=True)
                 .add_field(name=f"Players",
-                           value='\n'.join(map(format_player, state.player_ids)),
-                           inline=True)
+                           value='\n'.join(map(format_player, state.player_ids)))
                 .add_field(name=f"{RED_EMOJI} RED {RED_EMOJI}",
-                           value=EMPTY + '\n'.join(map(mention, state.red_ids)),
-                           inline=True)
+                           value=EMPTY + '\n'.join(map(mention, state.red_ids)))
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",
-                           value=EMPTY + '\n'.join(map(mention, state.blu_ids)),
-                           inline=True)
+                           value=EMPTY + '\n'.join(map(mention, state.blu_ids)))
             ),
             'notify': 'Captains are ' + ' and '.join(map(mention, state.capt_ids)),
             **dict(enumerate(state.history))
@@ -395,14 +391,13 @@ class RunningState(State):
                         f"Predicted result: {score}"
                 ))
                 .add_field(name=f"{RED_EMOJI} RED {RED_EMOJI}",
-                           value=EMPTY + '\n'.join(map(mention, state.red_ids)),
-                           inline=True)
+                           value=EMPTY + '\n'.join(map(mention, state.red_ids)))
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",
-                           value=EMPTY + '\n'.join(map(mention, state.blu_ids)),
-                           inline=True)
-                .add_field(name=f"{EMPTY} Host {EMPTY}",
-                           value=mention(state.host_id) + f'\n\n{EMPTY} **Captains** {EMPTY}\n{mention(0)}\n{mention(1)}',
-                           inline=True)
+                           value=EMPTY + '\n'.join(map(mention, state.blu_ids)))
+                .add_field(name='Host', value=(
+                           f"{mention(state.host_id)}\n\n"
+                           f"**Captains**\n"
+                           f"{mention(0)}\n{mention(1)}"))
                 .set_footer(text=f"React with {DONE_EMOJI} once the PUG is finished.")
             ),
             ('running', 'notify'): 'PUG started: ' + ' '.join(map(mention, chain([state.host_id], state.red_ids, state.blu_ids))),
