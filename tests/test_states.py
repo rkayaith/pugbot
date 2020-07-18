@@ -124,6 +124,8 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_s
             assert next_states[-1].host_id == best_host
         if n_capt_votes > 0:
             assert next_states[-1].capt_ids[1] == best_capt
+        # captains should be removed from the list of players
+        assert next_states[-1].player_ids == (init_state.player_ids - set(next_states[-1].capt_ids))
     else:
         # make sure bot is adding the correct reacts
         expected_bot_reacts = set()

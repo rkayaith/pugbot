@@ -17,6 +17,7 @@ class React(NamedTuple):
     user_id: int
     emoji: Union[Emoji, str]
 
+
 FROZEN = True
 @dataclass(frozen=FROZEN)
 class State:
@@ -227,7 +228,7 @@ class VoteState(State):
             # start team picking
             [(host_id, _)] = host_votes.most_common(1)
             [(blu_capt, _), (red_capt, _)] = capt_votes.most_common(2)  # "worse" captain gets first pick (red)
-            yield PickState.make(state, host_id, (red_capt, blu_capt), state.player_ids)
+            yield PickState.make(state, host_id, (red_capt, blu_capt), state.player_ids - { red_capt, blu_capt })
 
     @property
     def host_voting(state):
@@ -269,34 +270,19 @@ class PickState(State):
         return super().make(from_state, host_id, tuple(capt_ids), fset(player_ids))
 
     @property
-    def red_ids(state):
-        return (state.capt_ids[0], *state.team_ids[0])
-
-    @property
-    def blu_ids(state):
-        return (state.capt_ids[1], *state.team_ids[1])
-
-    @property
-    def team_size(state):
-        return min(MAX_PLAYERS, len(state.capt_ids) + len(state.player_ids)) // 2
-
-    @cached_property
-    def unpicked_ids(state):
-        return state.player_ids - fset(state.team_ids[0] + state.team_ids[1])
-
-    @property
     def messages(state):
-        # TODO: ping the picking captain somehow
-        # TODO: clean up duplicated code here
         teams_full = (len(state.red_ids) == len(state.blu_ids) == state.team_size)
         if teams_full:
             description = "Teams picked. PUG starting..."
+            ping = {}
         else:
             picking_capt = state.capt_ids[PICK_ORDER[state.pick_idx]]
             description = (
                 f"React to pick a player.\n"
                 f"Current pick: {mention(picking_capt)}"
             )
+            # TODO: include the number of players to pick
+            ping = { ('ping', state.pick_idx): f"{mention(picking_capt)} - pick some players" }
 
         player_to_emoji = dict(zip(state.player_ids, OPTION_EMOJIS))
         def format_player(player_id):
@@ -331,7 +317,7 @@ class PickState(State):
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",
                            value=EMPTY + '\n'.join(map(mention, state.blu_ids)))
             ),
-            'notify': 'Captains are ' + ' and '.join(map(mention, state.capt_ids)),
+            **ping,
             **dict(enumerate(state.history))
         }
 
@@ -377,6 +363,21 @@ class PickState(State):
 
         yield (state := replace(state, reacts=reacts, pick_idx=pick_idx, team_ids=team_ids))
 
+    @property
+    def red_ids(state):
+        return (state.capt_ids[0], *state.team_ids[0])
+
+    @property
+    def blu_ids(state):
+        return (state.capt_ids[1], *state.team_ids[1])
+
+    @property
+    def team_size(state):
+        return min(MAX_PLAYERS, len(state.capt_ids) + len(state.player_ids)) // 2
+
+    @cached_property
+    def unpicked_ids(state):
+        return state.player_ids - fset(state.team_ids[0] + state.team_ids[1])
 
 
 @dataclass(frozen=FROZEN)
