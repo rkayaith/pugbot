@@ -92,6 +92,7 @@ class IdleState(State):
                 f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players.\n"
                 f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
             )
+        plural = lambda num, noun: f"{num} {noun}" + ('s' if num != 1 else '')
         return {
             'idle': (Embed(
                 title='**Waiting for players**',
@@ -101,12 +102,12 @@ class IdleState(State):
                     f"React with {CAPT_EMOJI} to captain.\n"
                     f"React with anything else to play.\n"
                 ))
-                .add_field(name=f"{HOST_EMOJI}  {len(state.host_ids)} hosts",
+                .add_field(name=f"{HOST_EMOJI}  {plural(len(state.host_ids), 'host')}",
                            value=EMPTY + ' '.join(map(mention, state.host_ids)))
-                .add_field(name=f"{CAPT_EMOJI}  {len(state.capt_ids)} captains",
+                .add_field(name=f"{CAPT_EMOJI}  {plural(len(state.capt_ids), 'captain')}",
                            value=EMPTY + ' '.join(map(mention, state.capt_ids)))
                 .add_field(inline=False,
-                           name=f"{player_emoji}  {len(state.player_ids)} players",
+                           name=f"{player_emoji}  {plural(len(state.player_ids), 'player')}",
                            value=EMPTY + ' '.join(map(mention, state.player_ids)))
                 .set_footer(text=footer)
             ),
