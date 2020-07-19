@@ -407,7 +407,7 @@ class RunningState(State):
                 .add_field(name='Host', value=(
                            f"{mention(state.host_id)}\n\n"
                            f"**Captains**\n"
-                           f"{mention(0)}\n{mention(1)}"))
+                           f"{mention(state.red_ids[0])}\n{mention(state.blu_ids[0])}"))
                 .set_footer(text=f"React with {DONE_EMOJI} once the PUG is finished.")
             ),
             ('running', 'notify'): 'PUG started: ' + ' '.join(map(mention, chain([state.host_id], state.red_ids, state.blu_ids))),
