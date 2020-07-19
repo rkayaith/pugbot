@@ -81,7 +81,7 @@ def setup(bot):
 
         chan_ctx = chan_ctxs[channel.id]
         if not isinstance(chan_ctx.state, StoppedState):
-            await ctx.send(f"I'm already running in {channel.mention}.")
+            await ctx.send(f"I'm already running in {channel.mention}")
             return
 
         await update_state(bot, chan_ctx, channel.id, lambda c: IdleState.make(c.state, admin_ids=c.state.admin_ids | { ctx.author.id }))
@@ -99,11 +99,11 @@ def setup(bot):
 
         chan_ctx = chan_ctxs[channel.id]
         if isinstance(chan_ctx.state, StoppedState):
-            await ctx.send(f"I'm not running in {channel_name}.")
+            await ctx.send(f"I'm not running in {channel_name}")
             return
 
         await update_state(bot, chan_ctx, channel.id, lambda c: StoppedState.make(c.state))
-        await ctx.send(f"Stopped in {channel_name}.")
+        await ctx.send(f"Stopped in {channel_name}")
 
 
     last_map = rand_map()
