@@ -48,7 +48,7 @@ def setup(bot):
     @bot.command()
     async def dm(ctx, user: User):
         await ctx.message.author.send(content=PASTA, tts=True)
-        print(f"dm'd {user}")
+        print(f"dm'd {ctx.message.author}")
 
 
 ALPHABET = [chr(i) for i in range(ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}'), ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}') + 26)]
