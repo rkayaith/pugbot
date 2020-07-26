@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 import random
 from typing import FrozenSet
 
-from discord import Embed, TextChannel
+from discord import Embed, TextChannel, User
 
 from src.bot_stuff import mention
 from src.rewrite import update_state
@@ -43,6 +43,12 @@ def setup(bot):
         if channel != ctx.channel:
             await ctx.send(f"Started wall in {channel.mention}")
         print(f"Started wall in {channel.mention}")
+
+
+    @bot.command()
+    async def dm(ctx, user: User):
+        await ctx.message.author.send(content=PASTA, tts=True)
+        print(f"dm'd {user}")
 
 
 ALPHABET = [chr(i) for i in range(ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}'), ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}') + 26)]
@@ -127,6 +133,14 @@ class DanceState(State):
             if next_idx == 0:
                 await asyncio.sleep(1)
             yield (state := replace(state, dance_idx=next_idx))
+
+PASTA = \
+"""
+92% of people who see this will not
+have the guts to repost it. When Goku
+died in the explosion Cell tied to destroy Earth with, he did it for you and me. If you're not ashamed to love Goku, post this as your status and show everyone. Thank you, Goku. I lifted up my arms for the spirit bomb every time you asked for my energy.
+"""
+
 DANCE = [
     """
 
