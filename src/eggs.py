@@ -1,13 +1,14 @@
 import asyncio
 from dataclasses import dataclass, replace
 import random
-from typing import FrozenSet
+from typing import FrozenSet, Tuple
 
-from discord import Embed, TextChannel, User
+from discord import Embed, File, TextChannel, User
 
-from src.bot_stuff import mention
-from src.rewrite import update_state
-from src.states import State, StoppedState, React, EMPTY, DONE_EMOJI
+from .bot_stuff import mention
+from .rewrite import update_state
+from .states import State, StoppedState, React, EMPTY, DONE_EMOJI
+from .utils import fset
 
 def setup(bot):
     from src.mem import chan_ctxs
@@ -44,11 +45,42 @@ def setup(bot):
             await ctx.send(f"Started wall in {channel.mention}")
         print(f"Started wall in {channel.mention}")
 
-
     @bot.command()
     async def dm(ctx, user: User):
         await ctx.message.author.send(content=PASTA, tts=True)
         print(f"dm'd {ctx.message.author}")
+
+    @bot.command()
+    async def tag(ctx, *users: User):
+        channel = ctx.channel
+        chan_ctx = chan_ctxs[channel.id]
+
+        if not isinstance(chan_ctx.state, (StoppedState, TagState)):
+            return
+
+        if isinstance(chan_ctx.state, StoppedState):
+            curr_state = TagState.make(chan_ctx.state, tuple([ctx.message.author.id]))
+        elif isinstance(chan_ctx.state, TagState):
+            curr_state = chan_ctx.state
+        else:
+            await ctx.send(f"I'm already running in {channel.mention}")
+            return
+
+        if ctx.message.author.id not in curr_state.tagged:
+            await ctx.send(f"sorry bud, only tagged people can tag people")
+            return
+
+        tagged = curr_state.tagged + tuple(u.id for u in users if u.id not in curr_state.tagged)
+        if curr_state.msg_id != -1:
+            await bot.delete_message(channel.id, curr_state.msg_id)
+
+        mentions = ' and '.join(mention(u) for u in tagged)
+        content = f"{mentions} pulling up to {channel.mention}"
+        msg = await ctx.send(content=content, file=File('./src/chad_shit.mp4'))
+
+        next_state = replace(curr_state, msg_id=msg.id, tagged=tagged)
+        await update_state(bot, chan_ctx, channel.id, lambda c: next_state)
+        print(f"Tagged {tagged} in {channel}")
 
 
 ALPHABET = [chr(i) for i in range(ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}'), ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}') + 26)]
@@ -133,6 +165,18 @@ class DanceState(State):
             if next_idx == 0:
                 await asyncio.sleep(1)
             yield (state := replace(state, dance_idx=next_idx))
+
+@dataclass(frozen=True)
+class TagState(State):
+    tagged: Tuple[int]
+    msg_id: int = -1
+
+    @property
+    def messages(state):
+        return {}
+
+    async def on_update(state):
+        yield state
 
 PASTA = \
 """
