@@ -54,6 +54,21 @@ def setup(bot):
             del chan_ctxs[chan_id]
             print(f"Patching {chan_id} ctx failed, resetting state. Error:\n{err}")
 
+    @commands.is_owner()
+    @bot.command(hidden=True)
+    async def status(ctx):
+        s = ""
+        for chan_id, chan_ctx in chan_ctxs.items():
+            state = type(chan_ctx.state).__name__
+            s += f"{chan_id} | {state}\n"
+        s = (
+            "```\n"
+            "chan_id            | state\n"
+            "-------------------+----------\n"
+            f"{s}\n"
+            "```\n"
+        )
+        await ctx.send(s)
 
     @commands.is_owner()
     @bot.command(hidden=True)
