@@ -55,9 +55,6 @@ def setup(bot):
         channel = ctx.channel
         chan_ctx = chan_ctxs[channel.id]
 
-        if not isinstance(chan_ctx.state, (StoppedState, TagState)):
-            return
-
         if isinstance(chan_ctx.state, StoppedState):
             curr_state = TagState.make(chan_ctx.state, tuple([ctx.message.author.id]))
         elif isinstance(chan_ctx.state, TagState):
@@ -72,7 +69,10 @@ def setup(bot):
 
         tagged = curr_state.tagged + tuple(u.id for u in users if u.id not in curr_state.tagged)
         if curr_state.msg_id != -1:
-            await bot.delete_message(channel.id, curr_state.msg_id)
+            try:
+                await bot.delete_message(channel.id, curr_state.msg_id)
+            except Exception as e:
+                print(f"[ERROR]:\n{e}")
 
         mentions = ' and '.join(mention(u) for u in tagged)
         content = f"{mentions} pulling up to {channel.mention}"
