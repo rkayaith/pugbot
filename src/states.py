@@ -401,9 +401,9 @@ class RunningState(State):
                            value=EMPTY + '\n'.join(map(mention, state.red_ids)))
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",
                            value=EMPTY + '\n'.join(map(mention, state.blu_ids)))
-                .add_field(name='Host', value=(
+                .add_field(name=f"{HOST_EMOJI} This My Dawg", value=(
                            f"{mention(state.host_id)}\n\n"
-                           f"**Captains**\n"
+                           f"{CAPT_EMOJI} **These My Slimes**\n"
                            f"{mention(state.red_ids[0])}\n{mention(state.blu_ids[0])}"))
             ),
             ('running', 'notify'): 'PUG started: ' + ' '.join(map(mention, chain([state.host_id], state.red_ids, state.blu_ids))),
