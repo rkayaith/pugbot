@@ -89,11 +89,10 @@ class IdleState(State):
         elif state.enough_ppl or state.admin_skip:
             footer = 'PUG starting now...'
         else:
-            # TODO: add info about using SKIP_EMOJI
             admin_names = (str(state.bot.get_user(user_id)) for user_id in state.admin_ids)
             footer = (
-                f"The PUG will start when there's at least {MIN_HOSTS} host, {MIN_CAPTS} captains, and {MIN_PLAYERS} players.\n"
-                f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}"
+                f"The PUG will start when there are {MIN_PLAYERS} players. All players will be added as host/captain if there aren't enough, and a vote will occur.\n"
+                f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}, or start it immediately by reacting with {SKIP_EMOJI}"
             )
         plural = lambda num, noun: f"{num} {noun}" + ('s' if num != 1 else '')
         return {
@@ -146,9 +145,7 @@ class IdleState(State):
                                       - { state.bot.user_id })
     @property
     def enough_ppl(state):
-        return (len(state.host_ids) >= MIN_HOSTS and
-                len(state.capt_ids) >= MIN_CAPTS and
-                len(state.player_ids) >= MIN_PLAYERS)
+        return len(state.player_ids) >= MIN_PLAYERS
 
 
 @dataclass(frozen=FROZEN)

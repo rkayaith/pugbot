@@ -63,21 +63,25 @@ def test_idle_props(mock_bot):
 
 admin_wait = { React(TEST_ADMIN_ID, WAIT_EMOJI) }
 admin_skip = { React(TEST_ADMIN_ID, SKIP_EMOJI) }
-min_puggers = ({ React(u, HOST_EMOJI) for u in range(MIN_HOSTS) } |
-               { React(u, CAPT_EMOJI) for u in range(MIN_CAPTS) } |
-               { React(u, random.choice(range(4))) for u in range(MIN_PLAYERS) })
+hosts   = { React(u, HOST_EMOJI) for u in range(MIN_HOSTS) }
+capts   = { React(u, CAPT_EMOJI) for u in range(MIN_CAPTS) }
+players = { React(u, random.choice(range(4))) for u in range(MIN_PLAYERS) }
 @pytest.mark.parametrize("expected_state, reacts", [
-    # don't go anywhere when noone's reacted
+    # don't go anywhere when no one has reacted
     (IdleState, fset()),
-    # go to the picking state when everyone's reacted
-    (PickState, min_puggers),
+    # go to the picking state when everyone has reacted
+    (PickState, hosts | capts | players),
     # ...unless an admin says to wait
-    (IdleState, min_puggers | admin_wait),
+    (IdleState, hosts | capts | players | admin_wait),
     # ...UNLESS an admin says to start
-    (PickState, min_puggers | admin_wait | admin_skip),
+    (PickState, hosts | capts | players | admin_wait | admin_skip),
+    # go to the voting state when we dont have enough hosts or captains
+    (VoteState, players),
+    (VoteState, hosts | players),
+    (VoteState, capts | players),
     # go to the voting state if there's extra hosts or captains
-    (VoteState, min_puggers | { React(10, HOST_EMOJI) }),
-    (VoteState, min_puggers | { React(10, CAPT_EMOJI) }),
+    (VoteState, hosts | capts | players | { React(10, HOST_EMOJI) }),
+    (VoteState, hosts | capts | players | { React(10, CAPT_EMOJI) }),
 ])
 @pytest.mark.asyncio
 async def test_idle_update(base_state, expected_state, reacts):
