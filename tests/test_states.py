@@ -158,18 +158,12 @@ async def test_pick_update(base_state):
     assert state.blu_ids == (capt_ids[1], player_ids[3], player_ids[4], player_ids[5])
 
 
-@pytest.mark.parametrize('expected_state, reacts', [
-    (RunningState, { React(1000, DONE_EMOJI) }),
-    (IdleState, { React(1000, DONE_EMOJI), React(1001, DONE_EMOJI) }),
-    (IdleState, { React(TEST_ADMIN_ID, DONE_EMOJI) }),
-])
 @pytest.mark.asyncio
-async def test_running_update(base_state, expected_state, reacts):
+async def test_running_update(base_state):
     host_id = 10
     red_ids = tuple(range(1000, 1000+6))
     blu_ids = tuple(range(2000, 2000+6))
     init_state = RunningState.make(base_state, host_id, red_ids, blu_ids)
-
-    next_states = await alist(replace(init_state, reacts=reacts).on_update())
-    assert isinstance(next_states[-1], expected_state)
+    next_states = await alist(init_state.on_update())
+    assert isinstance(next_states[-1], StoppedState)
     [state.messages for state in next_states]

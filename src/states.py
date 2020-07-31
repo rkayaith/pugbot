@@ -408,18 +408,14 @@ class RunningState(State):
                            f"{mention(state.host_id)}\n\n"
                            f"**Captains**\n"
                            f"{mention(state.red_ids[0])}\n{mention(state.blu_ids[0])}"))
-                .set_footer(text=f"React with {DONE_EMOJI} once the PUG is finished.")
             ),
             ('running', 'notify'): 'PUG started: ' + ' '.join(map(mention, chain([state.host_id], state.red_ids, state.blu_ids))),
             **dict(enumerate(state.history))
         }
 
     async def on_update(state):
-        reacts = state.reacts | { React(state.bot.user_id, DONE_EMOJI) }
-        yield (state := replace(state, reacts=reacts))
-
-        # stop the bot when 2 people (plus the bot) or one admin reacts
-        done_ids = { r.user_id for r in reacts if r.emoji == DONE_EMOJI}
-        if len(done_ids) >= 3 or state.admin_ids & done_ids:
-            history = (*state.history, state.messages['running'])
-            yield IdleState.make(state, history=history)
+        yield state
+        # stop the bot
+        yield StoppedState.make(state, history=(*state.history,
+                                                state.messages['running'],
+                                                state.messages['running', 'notify']))
