@@ -84,9 +84,20 @@ def setup(bot):
         await update_state(bot, chan_ctx, channel.id, lambda c: c.state)
         await ctx.send(f"poked")
 
-    @bot.command(aliases=['s'])
+    @bot.command()
     async def start(ctx, channel: TextChannel = None):
-        """ Starts the bot in a channel """
+        """
+        Starts a pug in a channel
+
+        If no channel is given, the current channel is used.
+        The PUG steps are:
+          1. People react to the bot to queue up as a host/captain/player.
+          2. If necessary, there's a vote to choose the host and 2 captains.
+          3. Captains react to the bot to pick players. The captain with the
+             least votes gets first pick.
+          4. Once teams are picked, everyone gets pinged.
+        Whoever starts the PUG has additional controls during some steps.
+        """
         if channel is None:
             channel = ctx.channel
 
@@ -125,7 +136,10 @@ def setup(bot):
 
     @bot.command()
     async def randmap(ctx):
-        """ Picks a random map """
+        """
+        Picks a random map
+        Maps are chosen from intel's google doc, but maps I don't like are weighted lower.
+        """
         nonlocal last_map
         map_name = rand_map()
         colour = random.Random(hash(map_name)).randint(0, 0xffffff)
@@ -134,15 +148,6 @@ def setup(bot):
                       colour=colour)
         last_map = map_name
         await ctx.send(embed=embed)
-
-#   @bot.command(hidden=True)
-#   @commands.is_owner()
-#   async def status(ctx):
-#       """ Print out the bot's state in all channels. """
-#       await ctx.send('**Status**\n' + (
-#           '\n\n'.join(f"`{chan_id}-{state.msg.id}` {state.msg.channel.mention}\n{state}" for chan_id, state in pugs.items())
-#           or 'Not active in any channels.'
-#       ))
 
     @bot.listen()
     async def on_ready():

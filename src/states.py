@@ -91,8 +91,9 @@ class IdleState(State):
         else:
             admin_names = (str(state.bot.get_user(user_id)) for user_id in state.admin_ids)
             footer = (
-                f"The PUG will start when there are {MIN_PLAYERS} players. All players will be added as host/captain if there aren't enough, and a vote will occur.\n"
-                f"{' and '.join(admin_names)} can stop the PUG from starting by reacting with {WAIT_EMOJI}, or start it immediately by reacting with {SKIP_EMOJI}"
+                f"The PUG will automatically start when there are {MIN_PLAYERS} players.\n"
+                f"If there aren't enough hosts/captains, a vote including all players will start.\n"
+                f"{' and '.join(admin_names)} can react with {WAIT_EMOJI} to stop the PUG from starting, or {SKIP_EMOJI} to start it immediately.\n"
             )
         plural = lambda num, noun: f"{num} {noun}" + ('s' if num != 1 else '')
         return {
@@ -178,7 +179,7 @@ class VoteState(State):
             title='**PUG voting**',
             colour=0xaa8ed6,
             description='React to vote for a host/captains')
-            .set_footer(text=f"{' and '.join(admin_names)} can end this early by reacting with {SKIP_EMOJI}"))
+            .set_footer(text=f"{' and '.join(admin_names)} can react with {SKIP_EMOJI} to end voting early."))
 
         if state.host_voting:
             embed.add_field(name=f"Vote for a host",
@@ -308,7 +309,7 @@ class PickState(State):
                            value=' '.join(map(mention, state.capt_ids)),
                            inline=False)
                 .add_field(name=f"Players",
-                           value='\n'.join(map(format_player, state.player_ids)))
+                           value=EMPTY + '\n'.join(map(format_player, state.player_ids)))
                 .add_field(name=f"{RED_EMOJI} RED {RED_EMOJI}",
                            value=EMPTY + '\n'.join(map(mention, state.red_ids)))
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",
