@@ -5,7 +5,7 @@ from discord.ext import commands
 
 BOT_TOKEN  = os.environ['BOT_TOKEN']
 MODULES    = ['src.bot_stuff', 'src.states', 'src.utils']  # TODO: use sys.modules to generate this?
-EXTENSIONS = ['src.rewrite', 'src.eggs']
+EXTENSIONS = ['src.pug', 'src.eggs']
 
 
 # from src import PRELOADED_MODULES

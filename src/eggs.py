@@ -6,7 +6,7 @@ from typing import FrozenSet, Tuple
 from discord import Embed, File, Streaming, TextChannel, User
 
 from .bot_stuff import mention
-from .rewrite import update_state
+from .pug import update_state
 from .states import State, StoppedState, React, EMPTY, DONE_EMOJI
 from .utils import fset
 

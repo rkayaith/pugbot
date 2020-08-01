@@ -4,7 +4,7 @@ from unittest.mock import call
 
 from discord import Embed
 
-from src.rewrite import ChanCtx, React
+from src.pug import ChanCtx, React
 from src.bot_stuff import update_discord
 from src.utils import as_fut
 
