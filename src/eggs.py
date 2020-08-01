@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 import random
 from typing import FrozenSet, Tuple
 
-from discord import Embed, File, TextChannel, User
+from discord import Embed, File, Streaming, TextChannel, User
 
 from .bot_stuff import mention
 from .rewrite import update_state
@@ -12,6 +12,12 @@ from .utils import fset
 
 def setup(bot):
     from src.mem import chan_ctxs
+
+    @bot.listen()
+    async def on_ready():
+        streaming = Streaming(name='Gang Garrison Two',
+                              url='https://www.youtube.com/watch?v=VXVAfx5WQno')
+        await bot.change_presence(activity=streaming)
 
     @bot.command()
     async def dance(ctx, channel: TextChannel = None):
