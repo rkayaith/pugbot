@@ -111,7 +111,8 @@ class WallState(State):
                 f"{NEWLINE_EMOJI} to start a new line, "
                 f"{SPACE_EMOJI} for space, "
                 f"{BACKSPACE_EMOJI} for backspace."
-            ))
+            )),
+            **dict(enumerate(state.history))
         }
 
     async def on_update(state):
@@ -155,7 +156,8 @@ class DanceState(State):
                 title=title,
                 description=description,
                 colour = random.randint(0, 0xffffff)
-            ).set_footer(text='React to this message to stop the dance.')
+            ).set_footer(text='React to this message to stop the dance.'),
+            **dict(enumerate(state.history))
         }
 
     async def on_update(state):
