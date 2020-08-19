@@ -27,19 +27,38 @@ MAP_LIST = [
     ],
     # tier 2: good
     [
+        'cp_coldfront_v7',
+        'cp_docking_v2',
+        'cp_floaton',
+        'cp_gully',
         'cp_kistra',
         'ctf_eiger',
         'ctf_purple',
         'koth_corinth',
         'koth_odvuschwa',
         'koth_valley',
-        'koth_viaduct_a3'
+        'koth_viaduct_a3',
     ],
     # tier 3: spicy
     [
+        '3cp_oilbot',
+        '3cp_sandtoe',
+        '5cp_hillbase',
+        'Cp_Crepuscule_v2',
+        'Cp_Lighthouse',
         'arena_contra',
         'arena_harvest',
+        'cp_area51',
+        'cp_barrel',
+        'cp_buildingcontrol',
+        'cp_deepvalley',
+        'cp_deserthill',
+        'cp_extraction',
+        'cp_granite',
+        'cp_hillbase',
+        'cp_ledzep',
         'cp_mountainjazz',
+        'cp_riverfall_v2',
     ]
 ]
 
