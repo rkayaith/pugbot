@@ -1,11 +1,14 @@
 import asyncio
 from dataclasses import dataclass, field, replace
+from itertools import chain
 import random
 import sys
+import textwrap
 import traceback
 from typing import Any, Dict, FrozenSet, Union
+import zlib
 
-from discord import ChannelType, Embed, Object, TextChannel
+from discord import ChannelType, Colour, Embed, Object, TextChannel
 from discord.ext import commands
 
 from .bot_stuff import Bot, update_discord
@@ -13,10 +16,31 @@ from .states import React, State, StoppedState, IdleState
 from .utils import fset, first, anext
 
 MAP_LIST = [
-    ('ctf_conflict', 1), ('koth_harvest', 1), ('koth_contra', 1),
-    ('dkoth_kots', 0.5), ('ctf_conflict2', 0.5), ('ctf_rsm', 0.5), ('cp_mountainjazz', 0.5), ('koth_odvuschwa', 0.5),
-    ('koth_corinth', 0.1), ('cp_kistra', 0.1), ('ctf_eiger', 0.1),
-    ('koth_viaduct', 0.1), ('koth_valley', 0.1), ('arena_harvest', 0.1),
+    # tier 1: classics
+    [
+        'ctf_RSM',
+        'ctf_conflict',
+        'ctf_conflict2',
+        'dkoth_kots',
+        'koth_contra',
+        'koth_harvest',
+    ],
+    # tier 2: good
+    [
+        'cp_kistra',
+        'ctf_eiger',
+        'ctf_purple',
+        'koth_corinth',
+        'koth_odvuschwa',
+        'koth_valley',
+        'koth_viaduct_a3'
+    ],
+    # tier 3: spicy
+    [
+        'arena_contra',
+        'arena_harvest',
+        'cp_mountainjazz',
+    ]
 ]
 
 @dataclass
@@ -132,22 +156,32 @@ def setup(bot):
         await ctx.send(f"Stopped in {channel_name}")
 
 
-    last_map = rand_map()
+    ncols = 3
+    tier_list = []
+    col_widths = [max(len(map_name) for tier in MAP_LIST
+                                    for map_name in tier[i::ncols])
+                  for i in range(ncols)]
+    for i, tier in enumerate(MAP_LIST):
+        rows = [tier[j:j+ncols] for j in range(0, len(tier), ncols)]
+        tier_list += [f"\nTIER {i+1}:"]
+        tier_list += ['  '.join(map_name.ljust(width) for map_name, width in zip(row, col_widths))
+                                                      for row in rows]
 
-    @bot.command()
-    async def randmap(ctx):
-        """
+    @bot.command(help=textwrap.dedent(
+        f"""
         Picks a random map
-        Maps are chosen from intel's google doc, but maps I don't like are weighted lower.
-        """
-        nonlocal last_map
-        map_name = rand_map()
-        colour = random.Random(hash(map_name)).randint(0, 0xffffff)
-        embed = Embed(title=f"Fuck {last_map.split('_', 1)[-1].capitalize()} All My Homies Play",
-                      description=map_name,
-                      colour=colour)
-        last_map = map_name
-        await ctx.send(embed=embed)
+        Maps are only picked from 'lowest_tier' and above, and are equally weighted.
+        Defaults to picking from all maps.
+        """) + '\n'.join(tier_list))
+    async def randmap(ctx, lowest_tier: int = -1):
+        await ctx.send(embed=map_to_embed(rand_map(lowest_tier)))
+
+    @bot.command(hidden=True)
+    async def maps(ctx, lowest_tier: int = -1):
+        """ Shows all the options the randmap command can choose from """
+        maps = [m for tier in MAP_LIST[:lowest_tier] for m in tier]
+        for m in maps:
+            await ctx.send(embed=map_to_embed(m))
 
     @bot.listen()
     async def on_ready():
@@ -187,10 +221,34 @@ def setup(bot):
                             event.channel_id, event.message_id, update)
 
 
-def rand_map():
-    map_names, weights = zip(*MAP_LIST)
-    [map_name] = random.choices(map_names, weights=weights, k=1)
-    return map_name
+def rand_map(lowest_tier):
+    tiers = MAP_LIST[:lowest_tier] or [['ctf_el_map']]
+    maps = list(chain(*tiers))
+    return random.choice(maps)
+
+last_map = rand_map(-1)
+def map_to_embed(map_name):
+    global last_map
+
+    hue = (zlib.adler32(map_name.encode()) & 0xff) / 0xff
+    colour = Colour.from_hsv(hue, 0.5, 0.9)
+    embed = Embed(title=f"Fuck {last_map.split('_', 1)[-1].capitalize()} All My Homies Play",
+                  description=map_name,
+                  colour=colour)
+
+    mode = {
+        'ad': 'AD',
+        'arena': 'Arena',
+        'cp': 'CP',
+        'ctf': 'CTF',
+        'dkoth': 'DKOTH',
+        'koth': 'KOTH',
+    }[map_name.split('_')[0]]
+    img_url = f"https://raw.githubusercontent.com/Derpduck/GG2-Map-Archive/master/{mode}/{map_name}.png"
+    embed = embed.set_image(url=img_url)
+
+    last_map = map_name
+    return embed
 
 async def state_sequence(start_state):
     state_seq = start_state.on_update()
