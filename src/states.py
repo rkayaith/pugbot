@@ -386,18 +386,13 @@ class RunningState(State):
 
     @cached_property
     def messages(state):
-        score = (random.Random(hash(state.red_ids + state.blu_ids))
-                       .choice(['5 - 0', '0 - 5']))
         return {
             'running': (
                 Embed(
                     title=f"**{len(state.red_ids)}v{len(state.blu_ids)} PUG started**",
                     colour=0x77b255,
-                    description=(
-                        f"Fetching MMR data...\n"
-                        f"Calculating odds...\n"
-                        f"Predicted result: {score}"
-                ))
+                    description=EMPTY
+                )
                 .add_field(name=f"{RED_EMOJI} RED {RED_EMOJI}",
                            value=EMPTY + '\n'.join(map(mention, state.red_ids)))
                 .add_field(name=f"{BLU_EMOJI} BLU {BLU_EMOJI}",

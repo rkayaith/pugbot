@@ -175,7 +175,7 @@ def setup(bot):
         await ctx.send(f"Stopped in {channel_name}")
 
 
-    ncols = 3
+    ncols = 4
     tier_list = []
     col_widths = [max(len(map_name) for tier in MAP_LIST
                                     for map_name in tier[i::ncols])
