@@ -171,16 +171,15 @@ def setup(bot):
         f"""
         Picks a random map
         Maps are only picked from 'lowest_tier' and above, and are equally weighted.
-        Defaults to picking from all maps.
+        Defaults to picking from tier 2 and above.
         """) + '\n'.join(tier_list))
-    async def randmap(ctx, lowest_tier: int = -1):
+    async def randmap(ctx, lowest_tier: int = 2):
         await ctx.send(embed=map_to_embed(rand_map(lowest_tier)))
 
     @bot.command(hidden=True)
-    async def maps(ctx, lowest_tier: int = -1):
+    async def maps(ctx, tier: int):
         """ Shows all the options the randmap command can choose from """
-        maps = [m for tier in MAP_LIST[:lowest_tier] for m in tier]
-        for m in maps:
+        for m in MAP_LIST[tier-1]:
             await ctx.send(embed=map_to_embed(m))
 
     @bot.listen()
@@ -237,13 +236,15 @@ def map_to_embed(map_name):
                   colour=colour)
 
     mode = {
+        '3cp': 'CP',
+        '5cp': 'CP',
         'ad': 'AD',
         'arena': 'Arena',
         'cp': 'CP',
         'ctf': 'CTF',
         'dkoth': 'DKOTH',
         'koth': 'KOTH',
-    }[map_name.split('_')[0]]
+    }[map_name.split('_')[0].lower()]
     img_url = f"https://raw.githubusercontent.com/Derpduck/GG2-Map-Archive/master/{mode}/{map_name}.png"
     embed = embed.set_image(url=img_url)
 
