@@ -73,11 +73,11 @@ MAP_LIST = [
         'ctf_mariobros',
         'ctf_mountainbase',
         'ctf_paramental',
-        'ctf_pointers',
         'ctf_quickfort',
         'ctf_storeyard',
         'ctf_well_a3',
         'ctf_wreck',
+        'ctf_zthumbs_v3',
     ]
 ]
 
