@@ -169,7 +169,7 @@ class VoteState(State):
         # skip voting if there's nothing to vote on
         if not state.host_voting and not state.capt_voting:
             [host_id] = host_ids
-            return PickState.make(state, host_id, capt_ids, player_ids)
+            return PickState.make(state, host_id, tuple(capt_ids), fset(player_ids) - set(capt_ids))
         return state
 
     @property
