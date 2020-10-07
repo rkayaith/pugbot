@@ -6,7 +6,7 @@ import pytest
 
 from src.states import State, IdleState, VoteState, PickState, RunningState, StoppedState
 from src.states import MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS, MIN_VOTES
-from src.states import React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, OPTION_EMOJIS, DONE_EMOJI
+from src.states import React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, SHUFFLE_EMOJI, OPTION_EMOJIS, DONE_EMOJI
 from src.utils import alist, fset
 
 TEST_ADMIN_ID = 1234
@@ -90,28 +90,28 @@ async def test_idle_update(base_state, expected_state, reacts):
     assert [s.messages for s in next_states]
 
 
-@pytest.mark.parametrize("expected_state, n_hosts, n_capts, admin_skip, n_host_votes, n_capt_votes", [
+@pytest.mark.parametrize("n_hosts, n_capts, n_host_votes, n_capt_votes, admin_emojis, expected_state", [
     # voting waits if we don't have enough votes
-    (VoteState, 2, 3, False, 0, 0),
-    (VoteState, 2, 3, False, MIN_VOTES, MIN_VOTES - 1),
-    (VoteState, 2, 3, False, MIN_VOTES - 1, MIN_VOTES),
+    (2, 3,             0,             0,              [],    VoteState),
+    (2, 3,     MIN_VOTES, MIN_VOTES - 1,              [],    VoteState),
+    (2, 3, MIN_VOTES - 1,     MIN_VOTES,              [],    VoteState),
     # voting ends if we have enough votes
-    (PickState, 2, 3, False, MIN_VOTES, MIN_VOTES),
-    (PickState, 1, 3, False, 0, MIN_VOTES),
-    (PickState, 2, 2, False, MIN_VOTES, 0),
+    (2, 3,     MIN_VOTES,     MIN_VOTES,              [],    PickState),
+    (1, 3,             0,     MIN_VOTES,              [],    PickState),
+    (2, 2,     MIN_VOTES,             0,              [],    PickState),
     # voting ends if an admin says so, even if we don't have enough votes
-    (PickState, 2, 3,  True, 1, 1),
+    (2, 3,             1,             1,    [SKIP_EMOJI],    PickState),
+    # voting ends and teams are randomized if an admin says so
+    (2, 3,             1,             1, [SHUFFLE_EMOJI], RunningState),
 ])
 @pytest.mark.asyncio
-async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_skip, n_host_votes, n_capt_votes):
+async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_emojis, n_host_votes, n_capt_votes):
     init_state = VoteState.make(base_state,
                                 host_ids=fset(range(n_hosts)),
                                 capt_ids=fset(range(n_capts)),
                                 player_ids=fset(range(MIN_PLAYERS)))
 
-    reacts = set()
-    if admin_skip:
-        reacts |= { React(TEST_ADMIN_ID, SKIP_EMOJI) }
+    reacts = { React(TEST_ADMIN_ID, e) for e in admin_emojis }
     best_host = 0
     best_capt = 1
     reacts |= { React(u, init_state.host_emojis[best_host]) for u in range(n_host_votes) }

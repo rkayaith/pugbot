@@ -50,11 +50,12 @@ MAX_PLAYERS = 12
 MIN_PLAYERS = 8
 
 EMPTY = '\u200B'  # zero-width space
-SKIP_EMOJI   = '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE}'
-WAIT_EMOJI   = '\N{DOUBLE VERTICAL BAR}\uFE0F'
-HOST_EMOJI   = '\N{GLOBE WITH MERIDIANS}'
-CAPT_EMOJI   = '\N{BILLED CAP}'
-PLAYER_EMOJI = '\N{MAN}\N{ZERO WIDTH JOINER}\N{PERSONAL COMPUTER}'
+SKIP_EMOJI    = '\N{BLACK RIGHT-POINTING DOUBLE TRIANGLE}'
+WAIT_EMOJI    = '\N{DOUBLE VERTICAL BAR}\uFE0F'
+SHUFFLE_EMOJI = '\N{TWISTED RIGHTWARDS ARROWS}'
+HOST_EMOJI    = '\N{GLOBE WITH MERIDIANS}'
+CAPT_EMOJI    = '\N{BILLED CAP}'
+PLAYER_EMOJI  = '\N{MAN}\N{ZERO WIDTH JOINER}\N{PERSONAL COMPUTER}'
 
 FLAG_EMOJIS   = ['\U0001F3F3\U0000FE0F\U0000200D\U0001F308', '\U0001F3F4\U0000200D\U00002620\U0000FE0F'] + list(map(flag, ['in', 'cn', 'br', 'ae', 'kp', 'im', 'eu', 'il', 'mk', 'mx', 'jp']))
 OPTION_EMOJIS = [f'{i}\N{COMBINING ENCLOSING KEYCAP}' for i in range(10)] + [chr(i) for i in range(ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}'), ord('\N{REGIONAL INDICATOR SYMBOL LETTER A}') + 26)]
@@ -179,7 +180,7 @@ class VoteState(State):
             title='**PUG voting**',
             colour=0xaa8ed6,
             description='React to vote for a host/captains')
-            .set_footer(text=f"{' and '.join(admin_names)} can react with {SKIP_EMOJI} to end voting early."))
+            .set_footer(text=f"{' and '.join(admin_names)} can react with {SKIP_EMOJI} to end voting early, or {SHUFFLE_EMOJI} to randomize teams."))
 
         if state.host_voting:
             embed.add_field(name=f"Vote for a host",
@@ -208,6 +209,12 @@ class VoteState(State):
             bot_reacts = { React(state.bot.user_id, e) for e in emojis }
             if voting and not bot_reacts <= state.reacts and len(bot_reacts) < 10:
                 yield (state := replace(state, reacts=state.reacts | bot_reacts))
+
+        # admins can choose to just randomize teams
+        admin_shuffle = state.reacts & { React(a_id, SHUFFLE_EMOJI) for a_id in state.admin_ids }
+        if admin_shuffle:
+            yield RunningState.make_random(state, *state.capt_ids, *state.player_ids)
+            return
 
         def count_votes(emojis, ids):
             emoji_to_id = dict(zip(emojis, ids))
@@ -383,6 +390,20 @@ class RunningState(State):
     host_id: int
     red_ids: Tuple[int, ...]
     blu_ids: Tuple[int, ...]
+
+    @classmethod
+    def make_random(cls, from_state, *player_ids):
+        player_ids = set(player_ids)  # get rid of duplicates
+        assert len(player_ids) >= 2
+
+        shuffled_ids = random.sample(player_ids, k=len(player_ids))
+        team_size = len(shuffled_ids) // 2
+        host_id = shuffled_ids[-1]
+        red_ids = shuffled_ids[:team_size]
+        blu_ids = shuffled_ids[team_size:team_size * 2]
+
+        return cls.make(from_state, host_id, tuple(red_ids), tuple(blu_ids))
+
 
     @cached_property
     def messages(state):
