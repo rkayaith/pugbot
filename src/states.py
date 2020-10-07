@@ -45,7 +45,6 @@ class StoppedState(State):
 
 MIN_HOSTS = 1
 MIN_CAPTS = 2
-MIN_VOTES = 12
 MAX_PLAYERS = 12
 MIN_PLAYERS = 8
 
@@ -176,11 +175,15 @@ class VoteState(State):
     @property
     def messages(state):
         admin_names = (str(state.bot.get_user(u)) for u in state.admin_ids)
+        players_that_didnt_react = (set(state.player_ids) - { r.user_id for r in state.reacts})
         embed = (Embed(
             title='**PUG voting**',
             colour=0xaa8ed6,
             description='React to vote for a host/captains')
-            .set_footer(text=f"{' and '.join(admin_names)} can react with {SKIP_EMOJI} to end voting early, or {SHUFFLE_EMOJI} to randomize teams."))
+            .set_footer(text=(
+                f"Waiting for {len(players_that_didnt_react)} more players to react.\n"
+                f"{' and '.join(admin_names)} can react with {SKIP_EMOJI} to end voting early, or {SHUFFLE_EMOJI} to randomize teams.\n")
+            ))
 
         if state.host_voting:
             embed.add_field(name=f"Vote for a host",
@@ -210,26 +213,33 @@ class VoteState(State):
             if voting and not bot_reacts <= state.reacts and len(bot_reacts) < 10:
                 yield (state := replace(state, reacts=state.reacts | bot_reacts))
 
+        # remove any votes by people for themselves, or by people who aren't playing
+        self_host_votes  = { React(i, e) for i, e in zip(state.host_ids, state.host_emojis) }
+        self_capt_votes  = { React(i, e) for i, e in zip(state.capt_ids, state.capt_emojis) }
+        non_player_votes = { r for r in state.reacts if r.user_id not in (state.player_ids | { *state.admin_ids, state.bot.user_id }) }
+        yield (state := replace(state, reacts=state.reacts - self_host_votes - self_capt_votes - non_player_votes))
+
         # admins can choose to just randomize teams
         admin_shuffle = state.reacts & { React(a_id, SHUFFLE_EMOJI) for a_id in state.admin_ids }
         if admin_shuffle:
             yield RunningState.make_random(state, *state.capt_ids, *state.player_ids)
             return
 
-        def count_votes(emojis, ids):
-            emoji_to_id = dict(zip(emojis, ids))
-            votes = Counter({ i: 0 for i in ids })
-            votes.update(emoji_to_id.get(r.emoji, 'other')
-                         for r in state.reacts if r.user_id != state.bot.user_id)
-            del votes['other']
-            return votes
-        host_votes = count_votes(state.host_emojis, state.host_ids)
-        capt_votes = count_votes(state.capt_emojis, state.capt_ids)
-
         # admins can end this state early
         admin_skip = state.reacts & { React(a_id, SKIP_EMOJI) for a_id in state.admin_ids }
-        if admin_skip or ((sum(host_votes.values()) >= MIN_VOTES or not state.host_voting) and
-                          (sum(capt_votes.values()) >= MIN_VOTES or not state.capt_voting)):
+        all_players_have_reacted = ({ r.user_id for r in state.reacts } >= set(state.player_ids))
+        if admin_skip or all_players_have_reacted:
+            # tally up them votes
+            def count_votes(emojis, ids):
+                emoji_to_id = dict(zip(emojis, ids))
+                votes = Counter({ i: 0 for i in ids })
+                votes.update(emoji_to_id.get(r.emoji, 'other')
+                             for r in state.reacts if r.user_id != state.bot.user_id)
+                del votes['other']
+                return votes
+            host_votes = count_votes(state.host_emojis, state.host_ids)
+            capt_votes = count_votes(state.capt_emojis, state.capt_ids)
+
             # start team picking
             [(host_id, _)] = host_votes.most_common(1)
             [(blu_capt, _), (red_capt, _)] = capt_votes.most_common(2)  # "worse" captain gets first pick (red)

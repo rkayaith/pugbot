@@ -5,7 +5,7 @@ import random
 import pytest
 
 from src.states import State, IdleState, VoteState, PickState, RunningState, StoppedState
-from src.states import MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS, MIN_VOTES
+from src.states import MIN_HOSTS, MIN_CAPTS, MIN_PLAYERS
 from src.states import React, HOST_EMOJI, CAPT_EMOJI, SKIP_EMOJI, WAIT_EMOJI, SHUFFLE_EMOJI, OPTION_EMOJIS, DONE_EMOJI
 from src.utils import alist, fset
 
@@ -92,17 +92,17 @@ async def test_idle_update(base_state, expected_state, reacts):
 
 @pytest.mark.parametrize("n_hosts, n_capts, n_host_votes, n_capt_votes, admin_emojis, expected_state", [
     # voting waits if we don't have enough votes
-    (2, 3,             0,             0,              [],    VoteState),
-    (2, 3,     MIN_VOTES, MIN_VOTES - 1,              [],    VoteState),
-    (2, 3, MIN_VOTES - 1,     MIN_VOTES,              [],    VoteState),
+    (2, 3,               0,               0,              [],    VoteState),
+    (2, 3,               0, MIN_PLAYERS - 1,              [],    VoteState),
+    (2, 3, MIN_PLAYERS - 1,               0,              [],    VoteState),
     # voting ends if we have enough votes
-    (2, 3,     MIN_VOTES,     MIN_VOTES,              [],    PickState),
-    (1, 3,             0,     MIN_VOTES,              [],    PickState),
-    (2, 2,     MIN_VOTES,             0,              [],    PickState),
+    (2, 3,     MIN_PLAYERS,     MIN_PLAYERS,              [],    PickState),
+    (1, 3,               0,     MIN_PLAYERS,              [],    PickState),
+    (2, 2,     MIN_PLAYERS,               0,              [],    PickState),
     # voting ends if an admin says so, even if we don't have enough votes
-    (2, 3,             1,             1,    [SKIP_EMOJI],    PickState),
+    (2, 3,               1,               1,    [SKIP_EMOJI],    PickState),
     # voting ends and teams are randomized if an admin says so
-    (2, 3,             1,             1, [SHUFFLE_EMOJI], RunningState),
+    (2, 3,               1,               1, [SHUFFLE_EMOJI], RunningState),
 ])
 @pytest.mark.asyncio
 async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_emojis, n_host_votes, n_capt_votes):
@@ -114,9 +114,8 @@ async def test_vote_update(base_state, expected_state, n_hosts, n_capts, admin_e
     reacts = { React(TEST_ADMIN_ID, e) for e in admin_emojis }
     best_host = 0
     best_capt = 1
-    reacts |= { React(u, init_state.host_emojis[best_host]) for u in range(n_host_votes) }
-    reacts |= { React(u, init_state.capt_emojis[best_capt]) for u in range(n_capt_votes) }
-    reacts |= { React(u, 'other') for u in range(20) }
+    reacts |= { React(u, init_state.host_emojis[best_host] if u != best_host else 'other') for u in range(n_host_votes) }
+    reacts |= { React(u, init_state.capt_emojis[best_capt] if u != best_capt else 'other') for u in range(n_capt_votes) }
 
     next_states = await alist(replace(init_state, reacts=reacts).on_update())
     assert isinstance(next_states[-1], expected_state)
