@@ -2,9 +2,11 @@
 Follow [these instructions](https://discordpy.readthedocs.io/en/latest/discord.html) to create a bot and invite it to a server you'll use for testing. Then start a local instance:
 ```bash
 # install dependencies
-$ pipenv sync
+$ pipenv sync -d
 # create an environment file
 $ echo "BOT_TOKEN=<YOUR_BOT_TOKEN>" > .env
+# run tests
+$ pipenv run python -m pytest
 # start the bot
 $ pipenv run python main.py
 ```
